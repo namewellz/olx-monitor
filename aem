@@ -1,0 +1,57 @@
+<dependency>
+    <groupId>org.apache.httpcomponents</groupId>
+    <artifactId>httpclient</artifactId>
+    <version>4.5.13</version> <!-- Use a versão compatível com seu projeto -->
+</dependency>
+
+
+package com.seuprojeto.core.servlets;
+
+import org.apache.felix.scr.annotations.sling.SlingServlet;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.sling.api.SlingHttpServletRequest;
+import org.apache.sling.api.SlingHttpServletResponse;
+import org.apache.sling.api.servlets.HttpConstants;
+import org.apache.sling.api.servlets.SlingAllMethodsServlet;
+import org.osgi.service.component.annotations.Component;
+
+import javax.servlet.Servlet;
+import javax.servlet.ServletException;
+import java.io.IOException;
+
+@Component(service = Servlet.class,
+        property = {
+                "sling.servlet.methods=" + HttpConstants.METHOD_GET,
+                "sling.servlet.paths=" + "/bin/test-dynatrace"
+        })
+public class DynatraceTestServlet extends SlingAllMethodsServlet {
+
+    @Override
+    protected void doGet(SlingHttpServletRequest request, SlingHttpServletResponse response) throws ServletException, IOException {
+        // Configurações do Dynatrace (substitua com seus dados!)
+        String url = "https://SEU_ENVIRONMENT.live.dynatrace.com/api/v2/logs/ingest";
+        String token = "SEU_API_TOKEN_DO_DYNATRACE";
+        String jsonPayload = "{\"content\":\"Teste de conectividade do AEM para Dynatrace\", \"severity\":\"INFO\"}";
+
+        try {
+            HttpClient client = HttpClientBuilder.create().build();
+            HttpPost post = new HttpPost(url);
+            post.setHeader("Authorization", "Api-Token " + token);
+            post.setHeader("Content-Type", "application/json");
+            post.setEntity(new StringEntity(jsonPayload));
+
+            HttpResponse dynatraceResponse = client.execute(post);
+            int statusCode = dynatraceResponse.getStatusLine().getStatusCode();
+
+            response.setContentType("text/plain");
+            response.getWriter().write("Resposta do Dynatrace: " + statusCode);
+
+        } catch (Exception e) {
+            response.getWriter().write("Erro: " + e.getMessage());
+        }
+    }
+}
