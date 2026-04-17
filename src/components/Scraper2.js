@@ -25,10 +25,11 @@ const extractIdFromUrl = (url) => {
     return match ? parseInt(match[1]) : null
 }
 
-// Parse ZAP price format: "R$ 540.000" → 540000
+// Parse ZAP price — accepts string "R$ 540.000" or raw number
 const parseZapPrice = (priceStr) => {
-    if (!priceStr) return 0
-    return parseInt(priceStr.replace('R$ ', '').replace(/\./g, '').trim()) || 0
+    if (priceStr == null) return 0
+    if (typeof priceStr === 'number') return priceStr
+    return parseInt(String(priceStr).replace(/\D/g, '')) || 0
 }
 
 // Extract search term label from URL path for logging/DB
@@ -43,65 +44,26 @@ const getSearchTerm = (url) => {
     }
 }
 
-// Try to extract listings from ZAP's __NEXT_DATA__ script
-// ZAP injects server-side data at multiple possible paths — try all known ones
-const extractFromNextData = (script) => {
-    try {
-        const data = JSON.parse(script)
+// Extract listings from Schema.org JSON-LD ItemList embedded in the page
+// ZAP uses this instead of __NEXT_DATA__ — it's a large inline <script> tag
+const extractFromJsonLd = ($) => {
+    let listings = null
+    let totalCount = 0
 
-        // Known paths in ZAP's __NEXT_DATA__
-        const candidates = [
-            data?.props?.pageProps?.listingsResponse?.search?.result?.listings,
-            data?.props?.pageProps?.data?.search?.result?.listings,
-            data?.props?.pageProps?.listings,
-            data?.props?.pageProps?.search?.result?.listings,
-        ]
-
-        for (const candidate of candidates) {
-            if (Array.isArray(candidate) && candidate.length) {
-                return candidate
+    $('script[type="application/ld+json"], script:not([src]):not([id])').each((_, el) => {
+        if (listings) return // already found
+        const text = $(el).text().trim()
+        if (!text.includes('"ItemList"')) return
+        try {
+            const data = JSON.parse(text)
+            if (data['@type'] === 'ItemList' && Array.isArray(data.itemListElement)) {
+                listings = data.itemListElement
+                totalCount = data.numberOfItems || listings.length
             }
-        }
+        } catch {}
+    })
 
-        // Try to find 'listings' anywhere one level deep in pageProps
-        const pageProps = data?.props?.pageProps
-        if (pageProps) {
-            for (const key of Object.keys(pageProps)) {
-                const val = pageProps[key]
-                if (val?.search?.result?.listings) return val.search.result.listings
-                if (val?.result?.listings) return val.result.listings
-                if (Array.isArray(val?.listings)) return val.listings
-            }
-        }
-
-        return null
-    } catch {
-        return null
-    }
-}
-
-// Extract total pages from __NEXT_DATA__
-const extractTotalPages = (script) => {
-    try {
-        const data = JSON.parse(script)
-        const pageProps = data?.props?.pageProps
-
-        const candidates = [
-            pageProps?.listingsResponse?.search?.totalCount,
-            pageProps?.data?.search?.totalCount,
-            pageProps?.search?.totalCount,
-        ]
-
-        for (const total of candidates) {
-            if (typeof total === 'number') {
-                return Math.ceil(total / 36) // ZAP default page size is 36
-            }
-        }
-
-        return null
-    } catch {
-        return null
-    }
+    return { listings, totalCount }
 }
 
 // HTML fallback parser using cheerio — based on ZAP's CSS structure
@@ -142,37 +104,24 @@ const scraper2 = async (url) => {
     const notify = await urlAlreadySearched(url)
     $logger.info(`[ZAP] Will notify: ${notify}`)
 
-    const scrapePage = async ($, script) => {
+    const scrapePage = async ($) => {
         try {
-            let listings = null
-            let totalPages = 1
-
-            // --- Strategy 1: __NEXT_DATA__ ---
-            if (script) {
-                listings = extractFromNextData(script)
-                totalPages = extractTotalPages(script) || 1
-            }
+            // --- Strategy 1: Schema.org JSON-LD ItemList ---
+            const { listings, totalCount } = extractFromJsonLd($)
 
             if (listings && listings.length) {
-                $logger.info(`[ZAP] Using __NEXT_DATA__ — ${listings.length} listings found (total pages: ${totalPages})`)
+                const totalPages = Math.ceil(totalCount / listings.length) || 1
+                $logger.info(`[ZAP] JSON-LD: ${listings.length} listings (total: ${totalCount}, pages ~${totalPages})`)
                 adsFound += listings.length
 
                 for (const item of listings) {
-                    // ZAP wraps listing data under .listing or directly
-                    const listing = item.listing || item
-
-                    const adUrl = listing.externalId
-                        ? `https://www.zapimoveis.com.br/imovel/${listing.slug || ''}-id-${listing.externalId}/`
-                        : listing.link?.href || null
-
-                    const id = extractIdFromUrl(adUrl) || listing.externalId || listing.id
-                    const title = listing.description || listing.title || ''
-                    const priceStr = listing.pricingInfos?.[0]?.price
-                        || listing.listing?.pricingInfos?.[0]?.price
-                        || null
-                    const price = parseZapPrice(priceStr ? 'R$ ' + priceStr : null)
-
+                    const adUrl = item.url || item.item?.url || null
+                    const id    = extractIdFromUrl(adUrl)
                     if (!id || !adUrl) continue
+
+                    const title  = item.name || item.item?.name || ''
+                    const offers = item.offers || item.item?.offers
+                    const price  = parseZapPrice(offers?.price || offers?.lowPrice)
 
                     $logger.info(`[ZAP] Ad: ${title} | Price: ${price}`)
 
@@ -190,8 +139,8 @@ const scraper2 = async (url) => {
                 return { nextPage: page < totalPages }
             }
 
-            // --- Strategy 2: HTML fallback ---
-            $logger.info(`[ZAP] __NEXT_DATA__ listings not found — falling back to HTML parser`)
+            // --- Strategy 2: HTML fallback (link hrefs com id-NNNN) ---
+            $logger.info(`[ZAP] JSON-LD not found — falling back to HTML parser`)
             const htmlListings = extractFromHtml($)
             $logger.info(`[ZAP] HTML fallback found ${htmlListings.length} links`)
             adsFound += htmlListings.length
@@ -216,7 +165,7 @@ const scraper2 = async (url) => {
                 }
             }
 
-            // Check pagination via aria-label on pagination buttons
+            // Detecta última página pelos botões de paginação
             const lastPageBtn = $('[aria-label]').filter((_, el) => {
                 const label = $(el).attr('aria-label') || ''
                 return label.startsWith('página ') && !isNaN(parseInt(label.replace('página ', '')))
@@ -241,14 +190,8 @@ const scraper2 = async (url) => {
         try {
             const response = await $httpClient(currentUrl)
             const $        = cheerio.load(response)
-            const script   = $('script[id="__NEXT_DATA__"]').text()
-
-            if (!script) {
-                $logger.error('[ZAP] No __NEXT_DATA__ found — site may be blocking the request')
-            }
-
-            const result = await scrapePage($, script)
-            nextPage     = result.nextPage
+            const result   = await scrapePage($)
+            nextPage       = result.nextPage
         } catch (error) {
             $logger.error('[ZAP] Fetch error: ' + error.message)
             return
