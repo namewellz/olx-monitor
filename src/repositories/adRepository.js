@@ -3,11 +3,11 @@ const $logger = require('../components/Logger.js')
 const adRepository = require('../repositories/adRepository')
 
 
-const getAd = async (id) => {
+const getAd = async (id, source) => {
     $logger.debug('adRepositorie: getAd')
 
-    const query = `SELECT * FROM ads WHERE id = ?`
-    const values = [id]
+    const query = `SELECT * FROM ads WHERE id = ? AND source = ?`
+    const values = [id, source]
 
     return new Promise(function (resolve, reject) {
         db.get(query, values, function (error, row) {
@@ -82,14 +82,15 @@ const createAd = async (ad) => {
     $logger.debug('adRepositorie: createAd')
 
     const query = `
-        INSERT INTO ads( id, url, title, searchTerm, price, created, lastUpdate )
-        VALUES( ?, ?, ?, ?, ?, ?, ? )
+        INSERT INTO ads( id, source, url, title, searchTerm, price, created, lastUpdate )
+        VALUES( ?, ?, ?, ?, ?, ?, ?, ? )
     `
 
     const now = new Date().toISOString()
 
     const values = [
         ad.id,
+        ad.source,
         ad.url,
         ad.title,
         ad.searchTerm,

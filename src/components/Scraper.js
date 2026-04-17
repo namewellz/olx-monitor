@@ -51,7 +51,7 @@ const scraper = async (url) => {
                 const adUrl = advert.url
                 const price = parseInt(advert.price?.replace('R$ ', '')?.replace('.', '') || '0')
 
-                const result = { id, url: adUrl, title, searchTerm, price, notify }
+                const result = { id, url: adUrl, title, searchTerm, price, notify, source: 'olx' }
 
                 const ad = new Ad(result)
                 $logger.info(`Ad: ${title} | Price: ${price}`)

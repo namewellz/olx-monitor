@@ -5,14 +5,16 @@ const db = new sqlite.Database(config.dbFile)
 const createTables = async () => {
   const queries = [
     `CREATE TABLE IF NOT EXISTS "ads" (
-        "id"            INTEGER NOT NULL UNIQUE,
+        "id"            INTEGER NOT NULL,
+        "source"        TEXT NOT NULL DEFAULT 'olx',
         "searchTerm"    TEXT NOT NULL,
         "title"	        TEXT NOT NULL,
         "price"         INTEGER NOT NULL,
         "url"           TEXT NOT NULL,
         "notified"      INTEGER NOT NULL DEFAULT 0,
         "created"       TEXT NOT NULL,
-        "lastUpdate"    TEXT NOT NULL
+        "lastUpdate"    TEXT NOT NULL,
+        PRIMARY KEY("id", "source")
     );`,
     `CREATE TABLE IF NOT EXISTS "logs" (
         "id"            INTEGER NOT NULL UNIQUE,
@@ -47,12 +49,15 @@ const createTables = async () => {
 
 // Migração para bancos existentes
 const runMigrations = async () => {
-  return new Promise((resolve) => {
-    db.run(`ALTER TABLE ads ADD COLUMN notified INTEGER NOT NULL DEFAULT 0`, (err) => {
-      // ignora erro se coluna já existe
-      resolve(true)
+  const migrations = [
+    `ALTER TABLE ads ADD COLUMN notified INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE ads ADD COLUMN source TEXT NOT NULL DEFAULT 'olx'`,
+  ]
+  for (const sql of migrations) {
+    await new Promise((resolve) => {
+      db.run(sql, () => resolve(true)) // ignora erro se coluna já existe
     })
-  })
+  }
 }
 
 module.exports = { db, createTables, runMigrations}

@@ -9,6 +9,7 @@ class Ad {
 
     constructor(ad) {
         this.id         = ad.id
+        this.source     = ad.source || 'olx'
         this.url        = ad.url
         this.title      = ad.title
         this.searchTerm = ad.searchTerm
@@ -44,7 +45,7 @@ class Ad {
 
     alreadySaved = async () => {
         try {
-            this.saved = await adRepository.getAd(this.id)
+            this.saved = await adRepository.getAd(this.id, this.source)
             return true
         } catch (error) {
             return false
@@ -64,7 +65,8 @@ class Ad {
 
         if (this.notify) {
             try {
-                const msg = 'New ad found!\n' + this.title + ' - R$' + this.price + '\n\n' + this.url
+                const source = this.source.toUpperCase()
+                const msg = `[${source}] New ad found!\n${this.title}\nR$${this.price.toLocaleString('pt-BR')}\n\n${this.url}`
                 notifier.sendNotification(msg, this.id)
             } catch (error) {
                 $logger.error('Could not send a notification')

@@ -125,7 +125,7 @@ const scraper2 = async (url) => {
 
                     $logger.info(`[ZAP] Ad: ${title} | Price: ${price}`)
 
-                    const ad = new Ad({ id, url: adUrl, title, searchTerm, price, notify })
+                    const ad = new Ad({ id, url: adUrl, title, searchTerm, price, notify, source: 'zap' })
                     await ad.process()
 
                     if (ad.valid) {
@@ -154,7 +154,7 @@ const scraper2 = async (url) => {
 
                 $logger.info(`[ZAP] Ad (html): ${title} | Price: ${price}`)
 
-                const ad = new Ad({ id, url: item.url, title, searchTerm, price, notify })
+                const ad = new Ad({ id, url: item.url, title, searchTerm, price, notify, source: 'zap' })
                 await ad.process()
 
                 if (ad.valid) {
