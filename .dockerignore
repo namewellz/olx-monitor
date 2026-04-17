@@ -8,6 +8,8 @@
 
 *.db
 *.sqlite
+*.log
 
 .git
+
 npm-debug.log
