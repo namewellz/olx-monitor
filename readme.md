@@ -2,98 +2,193 @@
 
 # OLX Monitor
 
-Estava procurando um produto específico no OLX, e diariamente acessava minhas buscas salvas no aplicativo à procura de uma boa oportunidade. Um dia encontrei uma ótima oportunidade, mas quando entrei em contato com o vendedor já era tarde, ele já estava indo ao encontro do comprador e caso a a venda não desse certo tinham mais 3 pessoas na espera para comprar.
+Estava procurando um imóvel no OLX e no ZAP Imóveis, e diariamente acessava minhas buscas salvas à procura de uma boa oportunidade. Um dia encontrei uma ótima oferta, mas quando entrei em contato já era tarde — o vendedor estava indo ao encontro de outro comprador e havia mais três pessoas na fila.
 
-Vi nessa situação uma oportunidade para aprender um pouco sobre scrapping usando o `nodejs` para tentar não perder uma próxima oportunidade. Espero que você também consiga o mesmo.
+Vi nessa situação uma oportunidade para aprender sobre scraping com `Node.js` e não perder a próxima. O projeto evoluiu para monitorar múltiplas fontes simultaneamente e enviar notificações pelo Telegram assim que um novo anúncio é encontrado ou um preço cai.
 
-## Instalação e configuração
+## Funcionalidades
 
-Para utilizar esse script você precisa ter o `node` e o `npm` devidamente instalados, ter uma conta no [Telegram](https://telegram.org/), e idealmente um computador que fique ligado 27/7 para executar o script continuamente. Eu usei um Raspberry Pi 2 que consome pouca energia e já uso para outros fins, mas você pode usar um VPS, ou um sevidor gratuito da Oracle.
+- Monitora **OLX** e **ZAP Imóveis** simultaneamente
+- Detecta **novos anúncios** e **quedas de preço** e notifica via Telegram
+- Fila de notificações com **retry automático** (até 3 tentativas com backoff)
+- **Rate limiting** entre notificações para evitar bloqueios da API do Telegram
+- Banco de dados SQLite com coluna `source` para diferenciar anúncios de cada plataforma
+- Suporte a múltiplas URLs de busca por fonte
+- Facilmente extensível para novas fontes (VivaReal, Imovelweb, etc.)
 
-Se você já está familiarizado com a API do Telegram e já mexeu bom bots segue um passo-a-passo mais enxuto:
+## Arquitetura
+
+```
+src/
+  components/
+    BaseScraper.js    ← loop de paginação, stats e logs (compartilhado)
+    ScraperOLX.js     ← parser específico do OLX (__NEXT_DATA__)
+    ScraperZAP.js     ← parser específico do ZAP (JSON-LD + fallback HTML)
+    Ad.js             ← lógica de validação, persistência e notificação
+    Notifier.js       ← envio Telegram com retry e fila de pendentes
+    HttpClient.js     ← cliente HTTP com fingerprint TLS anti-bot
+    Logger.js
+    CycleTls.js
+  database/
+    database.js       ← criação de tabelas e migrações
+  repositories/
+    adRepository.js
+    scrapperRepository.js
+  tests/
+    test-zap.js       ← teste isolado do ZAP (sem DB/Telegram)
+    test-both.js      ← teste lado a lado OLX + ZAP
+  index.js
+  config.js           ← suas configurações (ignorado pelo git)
+  sample-config.js    ← exemplo de configuração
+```
+
+## Fluxo de funcionamento
+
+```
+cron (config.interval)
+  └─ ScraperOLX → varre cada URL em config.olxUrls
+  └─ ScraperZAP → varre cada URL em config.zapUrls
+        └─ Para cada anúncio encontrado:
+              ├─ Novo?      → salva no banco (notified=0)
+              └─ Já existe? → verifica queda de preço → atualiza banco
+
+cron (a cada 1 minuto)
+  └─ processPendingNotifications
+        └─ Busca anúncios com notified=0, envia em lotes de 10
+              └─ Sucesso? → marca notified=1
+              └─ Falha?   → retry na próxima rodada (até 3 tentativas)
+```
+
+## Instalação
+
+### Pré-requisitos
+
+- Node.js 20+
+- npm
+- Conta no [Telegram](https://telegram.org/) com um bot criado
 
 ### Usando Node
 
-1. Clonar ou fazer download do repositório `git clone https://github.com/carmolim/olx-monitor.git`
-1. Acessar a pasta onde os arquivos js se encontram `cd src`
-1. Instalar as dependências com o comando `npm install`
-1. Renomear o arquivo `example.env` para `.env` e incluir as informações do seu BOT e do seu grupo que irá receber as notificações
-1. Incluir as URLs que você quer que sejam monitoradas no arquivo `config.js`
-1. Definir qual o intervalo que você quer que as buscas sejam feitas no arquivo `config.js`
-1. Executar o script usando o comando `node index.js`
-1. Acompanhar o andamento do script no Terminal
-1. Se correu tudo certo, dois novos arquivos foram criados dentro da pasta `data`: `ads.db` que é o banco de dados e o `scrapper.log` com os logs de execução do script
+1. Clone o repositório:
+   ```bash
+   git clone https://github.com/namewellz/olx-monitor.git
+   cd olx-monitor/src
+   ```
 
-### Usando docker-compose
+2. Instale as dependências:
+   ```bash
+   npm install
+   ```
 
-Se você quiser utiliar o Docker para não ter que instalar o Node e nem as dependências diretamente na sua máquina siga os seguintes passos
+3. Crie o arquivo `.env` na pasta `src/` com as credenciais do Telegram:
+   ```
+   TELEGRAM_TOKEN=seu_token_aqui
+   TELEGRAM_CHAT_ID=seu_chat_id_aqui
+   ```
 
-1. Realize os passos 1 a 7 do guia usando Node
-2. Na primeira vez que você for rodar é preciso buildar a imagem rodando o comando `docker-compose build`
-3. Nas próximas vezes só é necessário rodar o comando `docker-compose up`
+4. Crie o arquivo `config.js` baseado no `sample-config.js` e configure suas URLs e preferências.
 
+5. Execute:
+   ```bash
+   node index.js
+   ```
 
-### Configuração do Telegram
+6. Os arquivos de dados serão criados automaticamente em `data/`:
+   - `ads.db` — banco de dados SQLite
+   - `scrapper.log` — logs de execução
 
-Para você poder receber as notificações pelo Telegram você precisa ter algumas coisas, um bot que terá um token e um grupo que tenho bot com que você irá criar como participante.
+### Usando Docker
 
-#### Criar seu bot
+1. Realize os passos 1 a 4 do guia acima.
+2. Na primeira vez, faça o build da imagem:
+   ```bash
+   docker-compose build
+   ```
+3. Nas próximas execuções:
+   ```bash
+   docker-compose up
+   ```
 
-Para conseguir o seu token você precisa criar o seu próprio bot. Eu pretendo fazer um tutorial, mas enquanto isso você pode usar esse [aqui](https://www.youtube.com/watch?v=4u9JQR0-Bgc&feature=youtu.be&t=88). O vídeo é longo mas você só precisa assistir até: 3:24. Com esse vídeo você irá conseguir obter o seu token.
+## Configuração do Telegram
 
-#### Descobrindo seu CHAT ID
+### Criando o bot
 
-Depois de criar o seu bot, crie um grupo e convite o seu bot que você acabou de criar e també um outro bot, o `@idbot`, ele vai te ajudar a descobrir o `CHAT_ID` que precisamos para enviar a notificação. 
+Use o [@BotFather](https://t.me/BotFather) no Telegram para criar um bot e obter o `TELEGRAM_TOKEN`.
 
-Depois de incluir o no grupo, basta digitar `/getgroupid@myidbot` e bot irá responder com o ID do chat. 
+### Descobrindo o Chat ID
 
-#### Editando seu ambiênte
+1. Crie um grupo no Telegram e adicione seu bot e o [@myidbot](https://t.me/myidbot)
+2. Digite `/getgroupid@myidbot` no grupo
+3. O bot responderá com o `CHAT_ID` — use esse valor em `TELEGRAM_CHAT_ID`
 
-Dentro do repositório tem um arquivo chamado `example.env`, você precisa renomea-lo para apenas `.env` e preencher as informações que você acabou de pegar. 
+## Configuração das buscas
 
-| Variável          | Exemplo                                |
-| ----------------- | -------------------------------------- |
-| TELEGRAM_TOKEN    | Token do seu bot gerado pelo BotFather |
-| TELEGRAM_CHAT\_ID | ID do seu chat                         |
+Copie `sample-config.js` para `config.js` e edite conforme sua necessidade:
 
-### O que deve ser monitorado?
-
-Eu não sei o que você está procurando no OLX, mas você precisa dizer para o script. A forma mais fácil de fazer isso é entrar no site do OLX, fazer uma busca, colocar os filtros que você acha necessário e copiar o endereço que o OLX vai criar.
-
-Recomendo utilizar filtros bem específicos para não gerar resultados com muitos itens. Como esse script irá varrer todos os resultados encontrados, pode ser possível que não seja possível passar por todos os resultados dentro do intervalo definido, isso pode fazer com que o Olx perceba uma quantidade alta de chamadas do seu IP e faça algum bloqueio. Isso nunca me aconteceu, mas pode acontecer.
-
-Você pode utilizar uma ou mais pesquisas, basta apenas incluir as `URLs` no arquivo `config.js` dentro da variável `URLs`
-
-#### Exemplos
-
-##### Apenas uma `URL`
-
-```
-config.urls = ['https://sp.olx.com.br/sao-paulo-e-regiao/centro/celulares/iphone?cond=1&cond=2&pe=1600&ps=600&q=iphone']
-```
-
-##### Várias `URLs`
-
-Para usar várias `URLs` você só precisa separa-las por vírgula.
-
-```
-config.urls = [
-    'https://sp.olx.com.br/sao-paulo-e-regiao/centro/celulares/iphone?cond=1&cond=2&pe=1600&ps=600&q=iphone',
-    'https://sp.olx.com.br/sao-paulo-e-regiao/imoveis/venda?bae=2&bas=1&gsp=1&pe=600000&ps=100000&se=6&ss=2',
+```js
+// URLs do OLX — copie diretamente do site com seus filtros aplicados
+config.olxUrls = [
+    'https://www.olx.com.br/imoveis/venda/casas/estado-sp/grande-campinas/indaiatuba?pe=600000&q=jardim%20valenca',
 ]
+
+// URLs do ZAP Imóveis — copie diretamente do site com seus filtros aplicados
+config.zapUrls = [
+    'https://www.zapimoveis.com.br/venda/casas/sp+indaiatuba/?tipos=casa_residencial&quartos=3%2C4&precoMaximo=600000',
+]
+
+// Intervalo de varredura (padrão: a cada 5 minutos)
+config.interval = '*/5 * * * *'
+
+// true  → notifica todos os anúncios encontrados na primeira execução
+// false → só notifica anúncios novos a partir da segunda execução
+config.notifyOnFirstRun = false
 ```
 
-#### Dica
+### Dica
 
-Quando mais específica sua busca for mais eficiente o script será, se você só buscar por iPhone, no Brasil todo, você vai receber muitas notificações por dia, não vai ser muito legal.
+Quanto mais específica for a URL de busca, mais eficiente o monitor será. URLs com muitos resultados geram mais requisições e mais notificações. Prefira buscas já filtradas por bairro, tipo de imóvel, faixa de preço e número de quartos.
 
-## Funcionamento
+## Banco de dados
 
-O funcionamamento do script é simples. Ele percorre um `array` de `URLs` copiadas do OLX, que já contém os filtros de preço mínimo, máximo e etc, encontra os anúncios dentro dessa página e inclui os anúncios encontrados em um banco de dados SQLite e também envia uma notificação para um BOT no Telegram. 
+Os anúncios são salvos em SQLite com a seguinte estrutura:
 
-As entradas salvas no banco de dados são utilizadas posteriormente para detectar alterações nos preços, que também são notificadas através do Telegram.
+| Coluna       | Descrição                                      |
+|--------------|------------------------------------------------|
+| `id`         | ID do anúncio na plataforma de origem          |
+| `source`     | Origem do anúncio: `olx` ou `zap`              |
+| `searchTerm` | Termo/caminho da busca que encontrou o anúncio |
+| `title`      | Título do anúncio                              |
+| `price`      | Preço em valor inteiro                         |
+| `url`        | Link direto para o anúncio                     |
+| `notified`   | `0` = pendente, `1` = notificação enviada      |
+| `created`    | Data de criação                                |
+| `lastUpdate` | Data da última atualização                     |
 
+A chave primária é composta por `(id, source)` para evitar colisões entre plataformas que podem ter IDs numéricos coincidentes.
+
+## Adicionando uma nova fonte
+
+Graças ao `BaseScraper`, adicionar uma nova plataforma requer apenas criar um arquivo com o parser específico:
+
+```js
+// src/components/ScraperVivaReal.js
+const { createScraper } = require('./BaseScraper')
+
+module.exports = {
+    scraper: createScraper({
+        source: 'vivareal',
+        getSearchTerm: (url) => { /* extrai termo da URL */ },
+        setPageParam:  (url, page) => { /* adiciona parâmetro de paginação */ },
+        parsePage:     ($, page) => { /* retorna { ads, nextPage } */ },
+    })
+}
+```
+
+Depois basta registrar em `index.js` e adicionar `config.vivarealUrls` no `config.js`.
 
 ## Considerações
 
-- Esse script só funciona com a versão brasileira do OLX, nos outros países a interface é diferente e o scrapper não consegue puxar as informações necessárias para funcionar. Porém a adaptação para outros países deve ser consideravalmente fácil de fazer. As alterações deverão ser feitas no arquivo `Scraper.js`
+- O script usa **CycleTLS** para simular fingerprints TLS de navegadores reais, reduzindo o risco de bloqueio por detecção de bot.
+- O **OLX** injeta os dados via `__NEXT_DATA__` (Next.js). O **ZAP Imóveis** usa um JSON-LD Schema.org (`ItemList`) embutido na página, com fallback para parsing HTML caso a estrutura mude.
+- O notificador roda em cron **independente** do scraper — se uma notificação falhar, ela será retentada automaticamente no próximo minuto.
+- Testado apenas na versão brasileira das plataformas.
