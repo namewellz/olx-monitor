@@ -4,10 +4,10 @@
 // Executa: node test-zap.js
 
 const cheerio = require('cheerio')
-const { initializeCycleTLS } = require('./components/CycleTls')
-const $httpClient = require('./components/HttpClient.js')
+const { initializeCycleTLS } = require('../components/CycleTls')
+const $httpClient = require('../components/HttpClient.js')
 
-const ZAP_URL = 'https://www.zapimoveis.com.br/venda/casas/sp+indaiatuba/?onde=%2CS%C3%A3o+Paulo%2CIndaiatuba%2C%2C%2C%2C%2Ccity%2CBR%3ESao+Paulo%3ENULL%3EIndaiatuba&tipos=casa_residencial&quartos=3%2C4&precoMaximo=600000'
+const ZAP_URL = 'https://www.zapimoveis.com.br/venda/casas/sp+indaiatuba++jd-valenca/3-quartos/?onde=%2CS%C3%A3o+Paulo%2CIndaiatuba%2C%2CJardim+Valen%C3%A7a%2C%2C%2Cneighborhood%2CBR%3ESao+Paulo%3ENULL%3EIndaiatuba%3EBarrios%3EJardim+Valenca%2C-23.071581%2C-47.198289%2C&tipos=casa_residencial&quartos=3%2C4&precoMaximo=600000'
 
 const extractIdFromUrl = (url) => {
     if (!url) return null

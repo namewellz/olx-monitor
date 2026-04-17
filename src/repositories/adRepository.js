@@ -1,6 +1,5 @@
 const { db } = require('../database/database.js')
 const $logger = require('../components/Logger.js')
-const adRepository = require('../repositories/adRepository')
 
 
 const getAd = async (id, source) => {
@@ -143,10 +142,10 @@ const getPendingNotifications = async () => {
 }
 
 // Marca anúncio como notificado após sucesso no Telegram
-const markAsNotified = async (id) => {
-    const query = `UPDATE ads SET notified = 1, lastUpdate = ? WHERE id = ?`
+const markAsNotified = async (id, source) => {
+    const query = `UPDATE ads SET notified = 1, lastUpdate = ? WHERE id = ? AND source = ?`
     return new Promise(function (resolve, reject) {
-        db.run(query, [new Date().toISOString(), id], function (error) {
+        db.run(query, [new Date().toISOString(), id, source], function (error) {
             if (error) { reject(error); return }
             resolve(true)
         })

@@ -23,17 +23,17 @@ const sendWithRetry = async (url, retries = 3) => {
     return false;
 };
 
-exports.sendNotification = async (msg, adId) => {
+exports.sendNotification = async (msg, adId, source) => {
     try {
         const apiUrl = `https://api.telegram.org/bot${config.telegramToken}/sendMessage?chat_id=${config.telegramChatID}&text=`;
         const encodedMsg = encodeURIComponent(msg);
         const success = await sendWithRetry(apiUrl + encodedMsg);
 
         if (success) {
-            if (adId) await adRepository.markAsNotified(adId);
-            $logger.info(`Notification sent for ad ${adId}`);
+            if (adId && source) await adRepository.markAsNotified(adId, source);
+            $logger.info(`Notification sent for ad ${adId} [${source}]`);
         } else {
-            $logger.error(`Failed to notify ad ${adId} - will retry on next run`);
+            $logger.error(`Failed to notify ad ${adId} [${source}] - will retry on next run`);
         }
 
         await delay(1500);
@@ -53,8 +53,9 @@ exports.processPendingNotifications = async () => {
         const batch = pending.slice(0, 10);
 
         for (const ad of batch) {
-            const msg = `New ad found!\n${ad.title} - R$${ad.price}\n\n${ad.url}`;
-            await exports.sendNotification(msg, ad.id);
+            const source = (ad.source || 'olx').toUpperCase()
+            const msg = `[${source}] New ad found!\n${ad.title}\nR$${Number(ad.price).toLocaleString('pt-BR')}\n\n${ad.url}`;
+            await exports.sendNotification(msg, ad.id, ad.source);
         }
 
         const remaining = pending.length - batch.length;

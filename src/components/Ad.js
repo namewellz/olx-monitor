@@ -67,7 +67,7 @@ class Ad {
             try {
                 const source = this.source.toUpperCase()
                 const msg = `[${source}] New ad found!\n${this.title}\nR$${this.price.toLocaleString('pt-BR')}\n\n${this.url}`
-                notifier.sendNotification(msg, this.id)
+                notifier.sendNotification(msg, this.id, this.source)
             } catch (error) {
                 $logger.error('Could not send a notification')
             }
