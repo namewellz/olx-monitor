@@ -1,5 +1,7 @@
 const { db } = require('../database/database.js')
 const $logger = require('../components/Logger.js')
+const adRepository = require('../repositories/adRepository')
+
 
 const getAd = async (id) => {
     $logger.debug('adRepositorie: getAd')
@@ -128,10 +130,36 @@ const updateAd = async (ad) => {
     })
 }
 
+// Busca todos os anúncios pendentes de notificação
+const getPendingNotifications = async () => {
+    const query = `SELECT * FROM ads WHERE notified = 0`
+    return new Promise(function (resolve, reject) {
+        db.all(query, [], function (error, rows) {
+            if (error) { reject(error); return }
+            resolve(rows || [])
+        })
+    })
+}
+
+// Marca anúncio como notificado após sucesso no Telegram
+const markAsNotified = async (id) => {
+    const query = `UPDATE ads SET notified = 1, lastUpdate = ? WHERE id = ?`
+    return new Promise(function (resolve, reject) {
+        db.run(query, [new Date().toISOString(), id], function (error) {
+            if (error) { reject(error); return }
+            resolve(true)
+        })
+    })
+}
+
+
+
 module.exports = {
     getAd,
     getAdsBySearchTerm,
     getAdsBySearchId,
     createAd,
-    updateAd
+    updateAd,
+    getPendingNotifications,
+    markAsNotified
 }
