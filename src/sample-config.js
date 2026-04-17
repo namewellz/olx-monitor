@@ -3,8 +3,7 @@ require('dotenv').config()
 let config = {}
 
 config.urls = [
-    'url1',
-    'url2'
+    'https://www.olx.com.br/imoveis/venda/estado-sp/grande-campinas/indaiatuba?pe=600000&sf=1&ret=1040'
 ]
 
 // this tool can help you create the interval string:
