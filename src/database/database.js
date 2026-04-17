@@ -1,25 +1,19 @@
-const path = require('path')
 const config = require('../config')
 const sqlite = require("sqlite3").verbose()
-const db = new sqlite.Database(
-  path.join(__dirname, '../', config.dbFile)
-)
+const db = new sqlite.Database(config.dbFile)
 
 const createTables = async () => {
-
-  // Define separate SQL statements for each table creation
   const queries = [
-    `
-    CREATE TABLE IF NOT EXISTS "ads" (
+    `CREATE TABLE IF NOT EXISTS "ads" (
         "id"            INTEGER NOT NULL UNIQUE,
         "searchTerm"    TEXT NOT NULL,
         "title"	        TEXT NOT NULL,
         "price"         INTEGER NOT NULL,
         "url"           TEXT NOT NULL,
+        "notified"      INTEGER NOT NULL DEFAULT 0,
         "created"       TEXT NOT NULL,
         "lastUpdate"    TEXT NOT NULL
     );`,
-
     `CREATE TABLE IF NOT EXISTS "logs" (
         "id"            INTEGER NOT NULL UNIQUE,
         "url"           TEXT NOT NULL,  
@@ -33,30 +27,32 @@ const createTables = async () => {
   ];
 
   return new Promise(function(resolve, reject) {
-    // Iterate through the array of queries and execute them one by one
     const executeQuery = (index) => {
       if (index === queries.length) {
-        resolve(true); // All queries have been executed
+        resolve(true);
         return;
       }
-
       db.run(queries[index], function(error) {
         if (error) {
           reject(error);
           return;
         }
-
-        // Execute the next query in the array
         executeQuery(index + 1);
       });
     };
-
-    // Start executing the queries from index 0
     executeQuery(0);
   });
+  
 }
 
-module.exports = {
-  db,
-  createTables
+// Migração para bancos existentes
+const runMigrations = async () => {
+  return new Promise((resolve) => {
+    db.run(`ALTER TABLE ads ADD COLUMN notified INTEGER NOT NULL DEFAULT 0`, (err) => {
+      // ignora erro se coluna já existe
+      resolve(true)
+    })
+  })
 }
+
+module.exports = { db, createTables, runMigrations}
