@@ -9,7 +9,7 @@ const { processPendingNotifications } = require("./components/Notifier")
 
 
 const runScraper = async () => {
-  for (const url of (config.urls || [])) {
+  for (const url of (config.olxUrls || [])) {
     try { await scraperOLX(url) } catch (error) { $logger.error(error) }
   }
   for (const url of (config.zapUrls || [])) {

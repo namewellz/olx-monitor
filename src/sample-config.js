@@ -2,7 +2,7 @@ require('dotenv').config()
 
 let config = {}
 
-config.urls = [
+config.olxUrls = [
     'https://www.olx.com.br/imoveis/venda/estado-sp/grande-campinas/indaiatuba?pe=600000&sf=1&ret=1040'
 ]
 
