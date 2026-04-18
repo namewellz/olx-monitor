@@ -1,10 +1,43 @@
 version: "3.7"
 services:
 
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB:       olxmonitor
+      POSTGRES_USER:     olxmonitor
+      POSTGRES_PASSWORD: olxmonitor
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U olxmonitor"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   olx-monitor:
+    image: olx-monitor:local
     build: .
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      PGHOST:                postgres
+      PGPORT:                5432
+      PGUSER:                olxmonitor
+      PGPASSWORD:            olxmonitor
+      PGDATABASE:            olxmonitor
+      DISABLE_NOTIFICATIONS: "true"
     volumes:
       - ./src/config.js:/usr/app/config.js
       - ./src/.env:/usr/app/.env
       - ./data:/usr/data
+
+volumes:
+  postgres_data:

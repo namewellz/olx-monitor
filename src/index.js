@@ -6,6 +6,7 @@ const { scraper: scraperOLX } = require("./components/ScraperOLX")
 const { scraper: scraperZAP } = require("./components/ScraperZAP")
 const { createTables, runMigrations } = require("./database/database.js")
 const { processPendingNotifications } = require("./components/Notifier")
+const { startServer } = require("./api/server")
 
 
 const runScraper = async () => {
@@ -39,6 +40,7 @@ const main = async () => {
   await createTables()
   await runMigrations()
   await initializeCycleTLS()
+  startServer(config.uiPort || 3000)
   runScraper()
 }
 

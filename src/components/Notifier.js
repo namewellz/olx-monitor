@@ -24,6 +24,10 @@ const sendWithRetry = async (url, retries = 3) => {
 };
 
 exports.sendNotification = async (msg, adId, source) => {
+    if (process.env.DISABLE_NOTIFICATIONS === 'true') {
+        $logger.info(`[NOTIFICATIONS DISABLED] Skipping: ${msg.substring(0, 60)}`)
+        return
+    }
     try {
         const apiUrl = `https://api.telegram.org/bot${config.telegramToken}/sendMessage?chat_id=${config.telegramChatID}&text=`;
         const encodedMsg = encodeURIComponent(msg);

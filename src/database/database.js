@@ -1,113 +1,58 @@
-const config = require('../config')
-const sqlite = require("sqlite3").verbose()
-const db = new sqlite.Database(config.dbFile)
+const { Pool } = require('pg')
+
+const pool = new Pool({
+  host:     process.env.PGHOST     || 'localhost',
+  port:     Number(process.env.PGPORT) || 5432,
+  user:     process.env.PGUSER     || 'olxmonitor',
+  password: process.env.PGPASSWORD || 'olxmonitor',
+  database: process.env.PGDATABASE || 'olxmonitor',
+})
+
+const query = (sql, params = []) => pool.query(sql, params)
 
 const createTables = async () => {
-  const queries = [
-    `CREATE TABLE IF NOT EXISTS "ads" (
-        "id"            INTEGER NOT NULL,
-        "source"        TEXT NOT NULL DEFAULT 'olx',
-        "searchTerm"    TEXT NOT NULL,
-        "title"	        TEXT NOT NULL,
-        "price"         INTEGER NOT NULL,
-        "url"           TEXT NOT NULL,
-        "notified"      INTEGER NOT NULL DEFAULT 0,
-        "created"       TEXT NOT NULL,
-        "lastUpdate"    TEXT NOT NULL,
-        PRIMARY KEY("id", "source")
-    );`,
-    `CREATE TABLE IF NOT EXISTS "logs" (
-        "id"            INTEGER NOT NULL UNIQUE,
-        "url"           TEXT NOT NULL,  
-        "adsFound"      INTEGER NOT NULL, 
-        "averagePrice"  NUMERIC NOT NULL,
-        "minPrice"      NUMERIC NOT NULL,
-        "maxPrice"      NUMERIC NOT NULL, 
-        "created"       TEXT NOT NULL,
-        PRIMARY KEY("id" AUTOINCREMENT)
-    );`
-  ];
+  await query(`
+    CREATE TABLE IF NOT EXISTS ads (
+      id            BIGINT       NOT NULL,
+      source        TEXT         NOT NULL DEFAULT 'olx',
+      "searchTerm"  TEXT         NOT NULL,
+      title         TEXT         NOT NULL,
+      price         INTEGER      NOT NULL,
+      url           TEXT         NOT NULL,
+      notified      INTEGER      NOT NULL DEFAULT 0,
+      created       TEXT         NOT NULL,
+      "lastUpdate"  TEXT         NOT NULL,
+      PRIMARY KEY (id, source)
+    )
+  `)
 
-  return new Promise(function(resolve, reject) {
-    const executeQuery = (index) => {
-      if (index === queries.length) {
-        resolve(true);
-        return;
-      }
-      db.run(queries[index], function(error) {
-        if (error) {
-          reject(error);
-          return;
-        }
-        executeQuery(index + 1);
-      });
-    };
-    executeQuery(0);
-  });
-  
+  await query(`
+    CREATE TABLE IF NOT EXISTS logs (
+      id              SERIAL   PRIMARY KEY,
+      url             TEXT     NOT NULL,
+      "adsFound"      INTEGER  NOT NULL,
+      "averagePrice"  NUMERIC  NOT NULL,
+      "minPrice"      NUMERIC  NOT NULL,
+      "maxPrice"      NUMERIC  NOT NULL,
+      created         TEXT     NOT NULL
+    )
+  `)
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS search_urls (
+      id      SERIAL  PRIMARY KEY,
+      source  TEXT    NOT NULL DEFAULT 'olx',
+      label   TEXT    NOT NULL DEFAULT '',
+      url     TEXT    NOT NULL,
+      active  INTEGER NOT NULL DEFAULT 1
+    )
+  `)
 }
 
-// Executa uma query ignorando erro (usado para ALTER TABLE idempotente)
-const runSilent = (sql) => new Promise((resolve) => {
-  db.run(sql, () => resolve(true))
-})
-
-// Verifica se a chave primária da tabela ads já é composta (id, source)
-const hasPrimaryKeySource = () => new Promise((resolve) => {
-  db.all(`PRAGMA table_info(ads)`, [], (err, rows) => {
-    if (err || !rows) return resolve(false)
-    // SQLite marca pk=1 e pk=2 para PKs compostas
-    const pkCols = rows.filter(r => r.pk > 0).map(r => r.name)
-    resolve(pkCols.includes('source'))
-  })
-})
-
-// Migração para bancos existentes
+// PostgreSQL suporta ADD COLUMN IF NOT EXISTS — migrações são idempotentes
 const runMigrations = async () => {
-  // Passo 1: garante que as colunas existem (idempotente)
-  await runSilent(`ALTER TABLE ads ADD COLUMN notified INTEGER NOT NULL DEFAULT 0`)
-  await runSilent(`ALTER TABLE ads ADD COLUMN source TEXT NOT NULL DEFAULT 'olx'`)
-
-  // Passo 2: migra a chave primária para (id, source) se ainda for apenas (id)
-  const pkOk = await hasPrimaryKeySource()
-  if (!pkOk) {
-    await new Promise((resolve, reject) => {
-      db.serialize(() => {
-        db.run(`BEGIN TRANSACTION`)
-        db.run(`
-          CREATE TABLE IF NOT EXISTS ads_migrated (
-            "id"          INTEGER NOT NULL,
-            "source"      TEXT NOT NULL DEFAULT 'olx',
-            "searchTerm"  TEXT NOT NULL,
-            "title"       TEXT NOT NULL,
-            "price"       INTEGER NOT NULL,
-            "url"         TEXT NOT NULL,
-            "notified"    INTEGER NOT NULL DEFAULT 0,
-            "created"     TEXT NOT NULL,
-            "lastUpdate"  TEXT NOT NULL,
-            PRIMARY KEY("id", "source")
-          )
-        `)
-        db.run(`
-          INSERT OR IGNORE INTO ads_migrated
-            (id, source, searchTerm, title, price, url, notified, created, lastUpdate)
-          SELECT
-            id,
-            COALESCE(source, 'olx'),
-            searchTerm, title, price, url,
-            COALESCE(notified, 0),
-            created, lastUpdate
-          FROM ads
-        `)
-        db.run(`DROP TABLE ads`)
-        db.run(`ALTER TABLE ads_migrated RENAME TO ads`)
-        db.run(`COMMIT`, (err) => {
-          if (err) { db.run(`ROLLBACK`); reject(err) }
-          else resolve(true)
-        })
-      })
-    })
-  }
+  await query(`ALTER TABLE ads ADD COLUMN IF NOT EXISTS notified INTEGER NOT NULL DEFAULT 0`)
+  await query(`ALTER TABLE ads ADD COLUMN IF NOT EXISTS source   TEXT    NOT NULL DEFAULT 'olx'`)
 }
 
-module.exports = { db, createTables, runMigrations}
+module.exports = { query, createTables, runMigrations }
