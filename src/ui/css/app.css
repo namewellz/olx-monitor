@@ -421,3 +421,68 @@ tbody tr:last-child { border-bottom: none; }
 .page { animation: fade-in .15s ease; }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+
+/* ── Mobile bottom nav (hidden on desktop) ───────────────────── */
+.mobile-nav { display: none; }
+
+/* ── Responsive ──────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .sidebar { display: none; }
+
+  .main { margin-left: 0; }
+
+  .topbar { padding: 0 14px; }
+  .topbar-title { font-size: 14px; }
+
+  .content {
+    padding: 14px;
+    padding-bottom: 76px; /* room for bottom nav */
+  }
+
+  .stat-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
+  .stat-value { font-size: 22px; }
+
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+
+  .section-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .section-header > div:last-child { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  .modal-backdrop { align-items: flex-end; }
+  .modal {
+    max-width: 100%;
+    margin: 0;
+    border-radius: var(--radius) var(--radius) 0 0;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .url-value { max-width: 160px; }
+
+  .table-wrap { font-size: 12px; }
+  thead th { padding: 8px 10px; }
+  tbody td { padding: 9px 10px; }
+
+  .mobile-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: 62px;
+    background: var(--bg-sidebar);
+    border-top: 1px solid var(--border);
+    z-index: 100;
+  }
+  .mobile-nav-item {
+    flex: 1;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 3px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color .15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mobile-nav-item.active { color: var(--accent); }
+  .mobile-nav-item:active { opacity: .7; }
+  .mobile-nav-icon { font-size: 17px; line-height: 1; }
+  .mobile-nav-label { font-size: 10px; font-weight: 600; letter-spacing: .3px; }
+}
