@@ -4,43 +4,73 @@ const { initializeCycleTLS } = require("./components/CycleTls")
 const $logger = require("./components/Logger")
 const { scraper: scraperOLX } = require("./components/ScraperOLX")
 const { scraper: scraperZAP } = require("./components/ScraperZAP")
-const { createTables, runMigrations } = require("./database/database.js")
+const { createTables, runMigrations, query } = require("./database/database.js")
 const { processPendingNotifications } = require("./components/Notifier")
 const { startServer } = require("./api/server")
 const { autoMigrate } = require("./migrate-sqlite-to-pg")
 
+// Migração única: popula search_urls com as URLs do config.js se a tabela estiver vazia
+const seedUrlsFromConfig = async () => {
+  const { rows } = await query('SELECT COUNT(*) AS n FROM search_urls')
+  if (Number(rows[0].n) > 0) return
+
+  const olxUrls = config.olxUrls || config.urls || []
+  const zapUrls = config.zapUrls || []
+
+  if (olxUrls.length === 0 && zapUrls.length === 0) return
+
+  for (const url of olxUrls) {
+    await query(
+      `INSERT INTO search_urls (source, url, active) VALUES ($1, $2, 1)`,
+      ['olx', url]
+    )
+  }
+  for (const url of zapUrls) {
+    await query(
+      `INSERT INTO search_urls (source, url, active) VALUES ($1, $2, 1)`,
+      ['zap', url]
+    )
+  }
+
+  $logger.info(`[seed] ${olxUrls.length} URL(s) OLX e ${zapUrls.length} URL(s) ZAP importadas do config.js para o banco`)
+}
 
 const runScraper = async () => {
-  // config.urls é o nome antigo — mantido para compatibilidade com configs existentes
-  const olxUrls = config.olxUrls || config.urls || []
-  for (const url of olxUrls) {
-    try { await scraperOLX(url) } catch (error) { $logger.error(error) }
+  const { rows: urls } = await query('SELECT * FROM search_urls WHERE active = 1')
+
+  if (urls.length === 0) {
+    $logger.warn('[scraper] Nenhuma URL ativa encontrada no banco. Adicione via interface em /urls')
+    return
   }
-  for (const url of (config.zapUrls || [])) {
-    try { await scraperZAP(url) } catch (error) { $logger.error(error) }
+
+  for (const row of urls) {
+    try {
+      if (row.source === 'olx')      await scraperOLX(row.url)
+      else if (row.source === 'zap') await scraperZAP(row.url)
+      else $logger.warn(`[scraper] Fonte desconhecida: ${row.source}`)
+    } catch (error) {
+      $logger.error(`[scraper] Erro em ${row.source} ${row.url}: ${error.message}`)
+    }
   }
 }
 
 const runNotifier = async () => {
-    try {
-        await processPendingNotifications()
-    } catch (error) {
-        $logger.error(error)
-    }
+  try {
+    await processPendingNotifications()
+  } catch (error) {
+    $logger.error(error)
+  }
 }
 
-
 // notificador roda a cada 1 minuto, independente do scraper
-cron.schedule('* * * * *', () => {
-    runNotifier()
-})
-
+cron.schedule('* * * * *', () => { runNotifier() })
 
 const main = async () => {
   $logger.info("Program started")
   await createTables()
   await runMigrations()
   await autoMigrate($logger)
+  await seedUrlsFromConfig()
   await initializeCycleTLS()
   startServer(config.uiPort || 3000)
   runScraper()
@@ -48,6 +78,4 @@ const main = async () => {
 
 main()
 
-cron.schedule(config.interval, () => {
-  runScraper()
-})
+cron.schedule(config.interval, () => { runScraper() })

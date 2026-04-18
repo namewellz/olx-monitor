@@ -135,13 +135,15 @@ app.post('/api/telegram/test', async (req, res) => {
 })
 
 // ── Run now ────────────────────────────────────────────────────
-app.post('/api/run', (req, res) => {
+app.post('/api/run', async (req, res) => {
   try {
     const { scraper: scraperOLX } = require('../components/ScraperOLX')
     const { scraper: scraperZAP } = require('../components/ScraperZAP')
-    const olxUrls = config.olxUrls || config.urls || []
-    olxUrls.forEach(url => scraperOLX(url).catch(() => {}))
-    ;(config.zapUrls || []).forEach(url => scraperZAP(url).catch(() => {}))
+    const urls = await dbAll(`SELECT * FROM search_urls WHERE active = 1`)
+    for (const row of urls) {
+      if (row.source === 'olx')      scraperOLX(row.url).catch(() => {})
+      else if (row.source === 'zap') scraperZAP(row.url).catch(() => {})
+    }
   } catch {}
   res.json({ ok: true })
 })
