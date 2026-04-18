@@ -7,6 +7,7 @@ const { scraper: scraperZAP } = require("./components/ScraperZAP")
 const { createTables, runMigrations } = require("./database/database.js")
 const { processPendingNotifications } = require("./components/Notifier")
 const { startServer } = require("./api/server")
+const { autoMigrate } = require("./migrate-sqlite-to-pg")
 
 
 const runScraper = async () => {
@@ -39,6 +40,7 @@ const main = async () => {
   $logger.info("Program started")
   await createTables()
   await runMigrations()
+  await autoMigrate($logger)
   await initializeCycleTLS()
   startServer(config.uiPort || 3000)
   runScraper()
