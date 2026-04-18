@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OLX Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/app.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body x-data="app()" x-init="init()">
+
+  <!-- ── Sidebar ───────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">M</div>
+      <span class="logo-text">OLX Monitor</span>
+    </div>
+
+    <nav>
+      <div class="sidebar-section">
+        <div class="sidebar-section-label">Monitor</div>
+        <div class="nav-item" :class="{ active: page === 'dashboard' }" @click="navigate('dashboard')">
+          <span class="nav-icon">⬡</span>
+          <span class="nav-label">Dashboard</span>
+        </div>
+        <div class="nav-item" :class="{ active: page === 'urls' }" @click="navigate('urls')">
+          <span class="nav-icon">⊞</span>
+          <span class="nav-label">URLs Monitoradas</span>
+        </div>
+        <div class="nav-item" :class="{ active: page === 'ads' }" @click="navigate('ads')">
+          <span class="nav-icon">◫</span>
+          <span class="nav-label">Anúncios</span>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-section-label">Sistema</div>
+        <div class="nav-item" :class="{ active: page === 'settings' }" @click="navigate('settings')">
+          <span class="nav-icon">⚙</span>
+          <span class="nav-label">Configurações</span>
+        </div>
+        <div class="nav-item" :class="{ active: page === 'logs' }" @click="navigate('logs')">
+          <span class="nav-icon">≡</span>
+          <span class="nav-label">Logs</span>
+        </div>
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="status-dot" :class="{ offline: !status.running }"></div>
+      <div>
+        <div class="status-text" x-text="status.running ? 'Scraper ativo' : 'Scraper parado'"></div>
+        <div class="status-text" x-text="'Próximo: ' + status.nextRun"></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Main ───────────────────────────────────────────────── -->
+  <div class="main">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <span class="topbar-title" x-text="pageTitle()"></span>
+      <div class="topbar-actions">
+        <button class="btn btn-secondary btn-sm" @click="runNow()" :disabled="running">
+          <span x-text="running ? '⟳ Executando…' : '▶ Executar agora'"></span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Content -->
+    <main class="content">
+
+      <!-- ── Dashboard ────────────────────────────────────────── -->
+      <div x-show="page === 'dashboard'" class="page">
+
+        <!-- Stat cards -->
+        <div class="stat-grid">
+          <div class="stat-card">
+            <div class="stat-icon">📋</div>
+            <div class="stat-label">Total de Anúncios</div>
+            <div class="stat-value" x-text="stats.total"></div>
+            <div class="stat-sub">banco de dados</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">🔔</div>
+            <div class="stat-label">Pendentes</div>
+            <div class="stat-value text-warning" x-text="stats.pending"></div>
+            <div class="stat-sub">aguardando notificação</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">✅</div>
+            <div class="stat-label">Notificados</div>
+            <div class="stat-value text-success" x-text="stats.notified"></div>
+            <div class="stat-sub">via Telegram</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon">🔍</div>
+            <div class="stat-label">URLs Ativas</div>
+            <div class="stat-value text-accent" x-text="stats.activeUrls"></div>
+            <div class="stat-sub" x-text="stats.olxCount + ' OLX · ' + stats.zapCount + ' ZAP'"></div>
+          </div>
+        </div>
+
+        <!-- Two-column layout -->
+        <div class="grid-2" style="align-items:start">
+
+          <!-- Últimas notificações -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="icon">🔔</span> Últimas Notificações</div>
+              <span class="badge badge-info" x-text="stats.pending + ' pendentes'"></span>
+            </div>
+            <template x-if="recentAds.length === 0">
+              <div style="color:var(--text-muted);font-size:12px;padding:12px 0">Nenhum anúncio ainda.</div>
+            </template>
+            <template x-for="ad in recentAds" :key="ad.id + ad.source">
+              <div class="log-item">
+                <div style="flex:1">
+                  <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+                    <span class="badge" :class="ad.source === 'olx' ? 'badge-warning' : 'badge-info'" x-text="ad.source.toUpperCase()"></span>
+                    <strong class="log-msg" x-text="ad.title"></strong>
+                  </div>
+                  <div style="display:flex;align-items:center;justify-content:space-between">
+                    <span class="text-success" style="font-weight:700;font-size:13px" x-text="formatPrice(ad.price)"></span>
+                    <span class="log-time" x-text="formatDate(ad.created)"></span>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- Status do sistema -->
+          <div style="display:flex;flex-direction:column;gap:16px">
+
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><span class="icon">📡</span> Status do Sistema</div>
+              </div>
+              <div class="setting-row" style="padding:10px 0">
+                <div class="setting-info">
+                  <div class="setting-name">Scraper</div>
+                  <div class="setting-desc" x-text="'Intervalo: ' + status.interval"></div>
+                </div>
+                <span class="badge" :class="status.running ? 'badge-success' : 'badge-danger'" x-text="status.running ? 'Ativo' : 'Parado'"></span>
+              </div>
+              <div class="setting-row" style="padding:10px 0">
+                <div class="setting-info">
+                  <div class="setting-name">Notificador</div>
+                  <div class="setting-desc">Processa fila a cada 1 minuto</div>
+                </div>
+                <span class="badge badge-success">Ativo</span>
+              </div>
+              <div class="setting-row" style="padding:10px 0;border-bottom:none">
+                <div class="setting-info">
+                  <div class="setting-name">Telegram</div>
+                  <div class="setting-desc" x-text="status.telegram ? 'Bot configurado' : 'Não configurado'"></div>
+                </div>
+                <span class="badge" :class="status.telegram ? 'badge-success' : 'badge-danger'" x-text="status.telegram ? 'OK' : 'Erro'"></span>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title"><span class="icon">📊</span> Última Varredura</div>
+              </div>
+              <template x-if="lastLog">
+                <div>
+                  <div class="cred-row">
+                    <span class="cred-key">Anúncios encontrados</span>
+                    <span style="color:var(--text-primary);font-weight:700" x-text="lastLog.adsFound"></span>
+                  </div>
+                  <div class="cred-row">
+                    <span class="cred-key">Preço médio</span>
+                    <span class="cred-val" x-text="formatPrice(lastLog.averagePrice)"></span>
+                  </div>
+                  <div class="cred-row">
+                    <span class="cred-key">Menor preço</span>
+                    <span class="text-success cred-val" x-text="formatPrice(lastLog.minPrice)"></span>
+                  </div>
+                  <div class="cred-row" style="border-bottom:none">
+                    <span class="cred-key">Horário</span>
+                    <span class="cred-val" x-text="formatDate(lastLog.created)"></span>
+                  </div>
+                </div>
+              </template>
+              <template x-if="!lastLog">
+                <div style="color:var(--text-muted);font-size:12px;padding:8px 0">Nenhuma varredura ainda.</div>
+              </template>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- ── URLs Monitoradas ──────────────────────────────────── -->
+      <div x-show="page === 'urls'" class="page">
+        <div class="section-header">
+          <div>
+            <div class="section-title">URLs Monitoradas</div>
+            <div class="section-sub">Gerencie as buscas que o monitor acompanha</div>
+          </div>
+          <button class="btn btn-primary" @click="openAddUrl()">
+            + Adicionar URL
+          </button>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+          <div class="tab" :class="{ active: urlTab === 'all' }" @click="urlTab = 'all'">Todas</div>
+          <div class="tab" :class="{ active: urlTab === 'olx' }" @click="urlTab = 'olx'">
+            OLX <span class="badge badge-warning" style="margin-left:4px" x-text="urlsBySource('olx').length"></span>
+          </div>
+          <div class="tab" :class="{ active: urlTab === 'zap' }" @click="urlTab = 'zap'">
+            ZAP <span class="badge badge-info" style="margin-left:4px" x-text="urlsBySource('zap').length"></span>
+          </div>
+        </div>
+
+        <div class="card" style="padding:0">
+          <template x-if="filteredUrls().length === 0">
+            <div style="padding:32px;text-align:center;color:var(--text-muted)">
+              Nenhuma URL cadastrada.<br>
+              <button class="btn btn-secondary btn-sm" style="margin-top:12px" @click="openAddUrl()">+ Adicionar primeira URL</button>
+            </div>
+          </template>
+          <template x-for="url in filteredUrls()" :key="url.id">
+            <div class="url-item">
+              <div>
+                <span class="badge" :class="url.source === 'olx' ? 'badge-warning' : 'badge-info'" x-text="url.source.toUpperCase()"></span>
+              </div>
+              <div style="flex:1;min-width:0">
+                <div class="url-label" x-text="url.label || 'Sem rótulo'"></div>
+                <div class="url-value" x-text="url.url"></div>
+              </div>
+              <label class="toggle" :title="url.active ? 'Desativar' : 'Ativar'">
+                <input type="checkbox" :checked="url.active" @change="toggleUrl(url)">
+                <span class="toggle-slider"></span>
+              </label>
+              <div class="url-actions">
+                <button class="btn btn-ghost btn-icon btn-sm" @click="editUrl(url)" title="Editar">✎</button>
+                <button class="btn btn-danger btn-icon btn-sm" @click="deleteUrl(url)" title="Remover">✕</button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- ── Anúncios ──────────────────────────────────────────── -->
+      <div x-show="page === 'ads'" class="page">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Anúncios</div>
+            <div class="section-sub" x-text="ads.length + ' anúncios no banco de dados'"></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select class="form-select" style="width:auto" x-model="adsFilter.source" @change="loadAds()">
+              <option value="">Todas as fontes</option>
+              <option value="olx">OLX</option>
+              <option value="zap">ZAP</option>
+            </select>
+            <select class="form-select" style="width:auto" x-model="adsFilter.notified" @change="loadAds()">
+              <option value="">Todos</option>
+              <option value="0">Pendentes</option>
+              <option value="1">Notificados</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="card" style="padding:0">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fonte</th>
+                  <th>Título</th>
+                  <th>Preço</th>
+                  <th>Status</th>
+                  <th>Criado em</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-if="ads.length === 0">
+                  <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:32px">Nenhum anúncio encontrado.</td></tr>
+                </template>
+                <template x-for="ad in ads" :key="ad.id + ad.source">
+                  <tr>
+                    <td><span class="badge" :class="ad.source === 'olx' ? 'badge-warning' : 'badge-info'" x-text="ad.source.toUpperCase()"></span></td>
+                    <td style="max-width:280px">
+                      <a :href="ad.url" target="_blank" x-text="ad.title" style="color:var(--text-primary)" class="hover:text-accent"></a>
+                    </td>
+                    <td style="font-weight:700;color:var(--success)" x-text="formatPrice(ad.price)"></td>
+                    <td>
+                      <span class="badge" :class="ad.notified ? 'badge-success' : 'badge-warning'" x-text="ad.notified ? 'Notificado' : 'Pendente'"></span>
+                    </td>
+                    <td class="text-muted" x-text="formatDate(ad.created)"></td>
+                    <td>
+                      <a :href="ad.url" target="_blank" class="btn btn-ghost btn-icon btn-sm" title="Abrir anúncio">↗</a>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Configurações ─────────────────────────────────────── -->
+      <div x-show="page === 'settings'" class="page">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Configurações</div>
+            <div class="section-sub">Parâmetros do monitor e integração com Telegram</div>
+          </div>
+          <button class="btn btn-primary" @click="saveSettings()">Salvar alterações</button>
+        </div>
+
+        <div class="grid-2" style="align-items:start">
+          <!-- Monitor -->
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div class="card">
+              <div class="card-header"><div class="card-title"><span class="icon">⏱</span> Monitor</div></div>
+
+              <div class="form-group">
+                <label class="form-label">Intervalo de varredura (cron)</label>
+                <input class="form-input" x-model="settings.interval" placeholder="*/5 * * * *">
+                <span class="form-hint">Ex.: <code>*/5 * * * *</code> = a cada 5 minutos</span>
+              </div>
+
+              <div class="setting-row">
+                <div class="setting-info">
+                  <div class="setting-name">Notificar na primeira execução</div>
+                  <div class="setting-desc">Envia todos os anúncios encontrados na 1ª varredura</div>
+                </div>
+                <label class="toggle">
+                  <input type="checkbox" x-model="settings.notifyOnFirstRun">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><div class="card-title"><span class="icon">🔔</span> Notificações</div></div>
+
+              <div class="setting-row">
+                <div class="setting-info">
+                  <div class="setting-name">Telegram — OLX</div>
+                  <div class="setting-desc">Chat ID para anúncios do OLX</div>
+                </div>
+                <span class="badge" :class="settings.telegramTokenOk ? 'badge-success' : 'badge-muted'" x-text="settings.telegramTokenOk ? 'Configurado' : 'Não configurado'"></span>
+              </div>
+
+              <div class="setting-row" style="border-bottom:none">
+                <div class="setting-info">
+                  <div class="setting-name">Telegram — ZAP</div>
+                  <div class="setting-desc">Chat ID para anúncios do ZAP (opcional)</div>
+                </div>
+                <span class="badge badge-muted">Usar mesmo grupo</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Telegram credentials -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title"><span class="icon">📬</span> Telegram</div>
+              <button class="btn btn-secondary btn-sm" @click="testTelegram()">Testar envio</button>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Bot Token</label>
+              <input class="form-input" type="password" x-model="settings.telegramToken" placeholder="123456:ABC-DEF...">
+              <span class="form-hint">Obtido via @BotFather</span>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Chat ID principal</label>
+              <input class="form-input" x-model="settings.telegramChatId" placeholder="-1001234567890">
+              <span class="form-hint">Use @myidbot em um grupo para descobrir o ID</span>
+            </div>
+
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label">Chat ID do ZAP (opcional)</label>
+              <input class="form-input" x-model="settings.telegramChatIdZap" placeholder="Deixe vazio para usar o mesmo grupo">
+              <span class="form-hint">Deixe em branco para enviar tudo no mesmo grupo</span>
+            </div>
+
+            <template x-if="telegramTest">
+              <div class="mt-4" style="padding:10px 12px;background:var(--bg-input);border-radius:var(--radius-sm);border:1px solid var(--border)">
+                <span :class="telegramTest.ok ? 'text-success' : 'text-danger'" x-text="telegramTest.msg"></span>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Logs ──────────────────────────────────────────────── -->
+      <div x-show="page === 'logs'" class="page">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Logs de Varredura</div>
+            <div class="section-sub">Histórico de execuções do scraper</div>
+          </div>
+        </div>
+
+        <div class="card" style="padding:0">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Horário</th>
+                  <th>URL / Busca</th>
+                  <th>Anúncios</th>
+                  <th>Preço médio</th>
+                  <th>Menor</th>
+                  <th>Maior</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-if="logs.length === 0">
+                  <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:32px">Nenhum log ainda.</td></tr>
+                </template>
+                <template x-for="log in logs" :key="log.id">
+                  <tr>
+                    <td class="text-muted" x-text="formatDate(log.created)"></td>
+                    <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-secondary)" x-text="log.url"></td>
+                    <td style="font-weight:600" x-text="log.adsFound"></td>
+                    <td x-text="formatPrice(log.averagePrice)"></td>
+                    <td class="text-success" x-text="formatPrice(log.minPrice)"></td>
+                    <td x-text="formatPrice(log.maxPrice)"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- ── Modal: Add / Edit URL ─────────────────────────────── -->
+  <div class="modal-backdrop" x-show="modal.open" x-transition @click.self="modal.open = false">
+    <div class="modal" @click.stop>
+      <div class="modal-header">
+        <span class="modal-title" x-text="modal.editId ? 'Editar URL' : 'Adicionar URL'"></span>
+        <button class="btn btn-ghost btn-icon" @click="modal.open = false">✕</button>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Fonte</label>
+        <select class="form-select" x-model="modal.source">
+          <option value="olx">OLX</option>
+          <option value="zap">ZAP Imóveis</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Rótulo (opcional)</label>
+        <input class="form-input" x-model="modal.label" placeholder="Ex.: Indaiatuba – Jardim Valença">
+      </div>
+
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label">URL de busca</label>
+        <input class="form-input" x-model="modal.url" placeholder="https://www.olx.com.br/imoveis/...">
+        <span class="form-hint">Cole a URL com todos os filtros já aplicados no site</span>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" @click="modal.open = false">Cancelar</button>
+        <button class="btn btn-primary" @click="saveUrl()">
+          <span x-text="modal.editId ? 'Salvar alterações' : 'Adicionar'"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
