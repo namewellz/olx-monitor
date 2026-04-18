@@ -5,6 +5,7 @@ function app() {
     urlTab: 'all',
 
     // ── Data ──────────────────────────────────────────────
+    appVersion: '',
     stats: { total: 0, pending: 0, notified: 0, activeUrls: 0, olxCount: 0, zapCount: 0 },
     status: { running: true, interval: '*/5 * * * *', nextRun: '--:--', telegram: false },
     recentAds: [],
@@ -41,6 +42,7 @@ function app() {
         this.loadLastLog(),
         this.loadUrls(),
         this.loadSettings(),
+        this.loadVersion(),
       ])
       // Auto-refresh every 30s
       setInterval(() => {
@@ -112,6 +114,9 @@ function app() {
     },
     async loadSettings() {
       try { Object.assign(this.settings, await this.api('/settings')) } catch {}
+    },
+    async loadVersion() {
+      try { const v = await this.api('/version'); this.appVersion = v.version || '' } catch {}
     },
 
     // ── Actions ───────────────────────────────────────────
@@ -251,11 +256,12 @@ function app() {
       if (!file) return
       this.backupMsg = null
       try {
-        const text = await file.text()
-        const data = JSON.parse(text)
-        if (!data.version || !data.ads) throw new Error('Arquivo inválido ou corrompido')
-        const res = await this.api('/restore', { method: 'POST', body: data })
-        this.backupMsg = { ok: true, text: `✓ Importados: ${res.ads} anúncios, ${res.search_urls} URLs, ${res.logs} logs` }
+        const formData = new FormData()
+        formData.append('backup', file)
+        const res = await fetch('/api/restore', { method: 'POST', body: formData })
+        if (!res.ok) throw new Error(await res.text())
+        const data = await res.json()
+        this.backupMsg = { ok: true, text: `✓ Importados: ${data.ads} anúncios, ${data.search_urls} URLs, ${data.logs} logs` }
         await this.loadStats()
         await this.loadUrls()
       } catch (e) {

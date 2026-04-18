@@ -1,11 +1,15 @@
 const path = require('path')
+const fs = require('fs')
 const express = require('express')
+const multer = require('multer')
 const { query, createTables } = require('../database/database')
 const config = require('../config')
 
 const app = express()
-app.use(express.json({ limit: '50mb' }))
+app.use(express.json())
 app.use(express.static(path.join(__dirname, '../ui')))
+
+const upload = multer({ dest: '/tmp/olx-monitor-uploads/' })
 
 // ── Helpers ────────────────────────────────────────────────────
 const dbAll = (sql, params) => query(sql, params).then(r => r.rows)
@@ -169,50 +173,68 @@ app.get('/api/backup', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
-// ── Restore (JSON completo) ────────────────────────────────────
-app.post('/api/restore', async (req, res) => {
+// ── Restore (streaming, sem limite de tamanho) ────────────────
+app.post('/api/restore', upload.single('backup'), async (req, res) => {
+  const filePath = req.file?.path
+  if (!filePath) return res.status(400).json({ error: 'Nenhum arquivo enviado' })
+  const BATCH = 200
+  let adsOk = 0, urlsOk = 0, logsOk = 0
+  const { Pool } = require('pg')
+  const pool = new Pool({
+    host: process.env.PGHOST || 'localhost', port: Number(process.env.PGPORT) || 5432,
+    user: process.env.PGUSER || 'olxmonitor', password: process.env.PGPASSWORD || 'olxmonitor',
+    database: process.env.PGDATABASE || 'olxmonitor',
+  })
   try {
-    const { ads = [], search_urls = [], logs = [] } = req.body
-    const client = await require('../database/database').query('SELECT 1').then ? null : null
-    const { Pool } = require('pg')
-    const pool = new Pool({
-      host: process.env.PGHOST || 'localhost', port: Number(process.env.PGPORT) || 5432,
-      user: process.env.PGUSER || 'olxmonitor', password: process.env.PGPASSWORD || 'olxmonitor',
-      database: process.env.PGDATABASE || 'olxmonitor',
-    })
+    const raw = fs.readFileSync(filePath, 'utf8')
+    const { ads = [], search_urls = [], logs = [] } = JSON.parse(raw)
     const pg = await pool.connect()
     try {
-      await pg.query('BEGIN')
-      for (const ad of ads) {
-        await pg.query(
-          `INSERT INTO ads (id, source, "searchTerm", title, price, url, notified, created, "lastUpdate")
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id, source) DO NOTHING`,
-          [ad.id, ad.source, ad.searchTerm, ad.title, ad.price, ad.url, ad.notified, ad.created, ad.lastUpdate]
-        )
+      for (let i = 0; i < ads.length; i += BATCH) {
+        const batch = ads.slice(i, i + BATCH)
+        await pg.query('BEGIN')
+        for (const ad of batch) {
+          await pg.query(
+            `INSERT INTO ads (id, source, "searchTerm", title, price, url, notified, created, "lastUpdate")
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id, source) DO NOTHING`,
+            [ad.id, ad.source, ad.searchTerm, ad.title, ad.price, ad.url, ad.notified, ad.created, ad.lastUpdate]
+          )
+          adsOk++
+        }
+        await pg.query('COMMIT')
       }
-      for (const u of search_urls) {
-        await pg.query(
-          `INSERT INTO search_urls (source, label, url, active) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
-          [u.source, u.label || '', u.url, u.active ?? 1]
-        )
+      for (let i = 0; i < search_urls.length; i += BATCH) {
+        const batch = search_urls.slice(i, i + BATCH)
+        await pg.query('BEGIN')
+        for (const u of batch) {
+          await pg.query(
+            `INSERT INTO search_urls (source, label, url, active) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
+            [u.source, u.label || '', u.url, u.active ?? 1]
+          )
+          urlsOk++
+        }
+        await pg.query('COMMIT')
       }
-      for (const l of logs) {
-        await pg.query(
-          `INSERT INTO logs (url, "adsFound", "averagePrice", "minPrice", "maxPrice", created)
-           VALUES ($1,$2,$3,$4,$5,$6)`,
-          [l.url, l.adsFound, l.averagePrice, l.minPrice, l.maxPrice, l.created]
-        )
+      for (let i = 0; i < logs.length; i += BATCH) {
+        const batch = logs.slice(i, i + BATCH)
+        await pg.query('BEGIN')
+        for (const l of batch) {
+          await pg.query(
+            `INSERT INTO logs (url, "adsFound", "averagePrice", "minPrice", "maxPrice", created)
+             VALUES ($1,$2,$3,$4,$5,$6)`,
+            [l.url, l.adsFound, l.averagePrice, l.minPrice, l.maxPrice, l.created]
+          )
+          logsOk++
+        }
+        await pg.query('COMMIT')
       }
-      await pg.query('COMMIT')
-      res.json({ ok: true, ads: ads.length, search_urls: search_urls.length, logs: logs.length })
-    } catch (e) {
-      await pg.query('ROLLBACK')
-      throw e
+      res.json({ ok: true, ads: adsOk, search_urls: urlsOk, logs: logsOk })
     } finally {
       pg.release()
       await pool.end()
     }
   } catch (e) { res.status(500).json({ error: e.message }) }
+  finally { fs.unlink(filePath, () => {}) }
 })
 
 // ── Export CSV (anúncios) ──────────────────────────────────────
@@ -234,6 +256,14 @@ app.get('/api/ads/export', async (req, res) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
     res.send('\uFEFF' + csv) // BOM para Excel reconhecer UTF-8
   } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ── Version ────────────────────────────────────────────────────
+app.get('/api/version', (req, res) => {
+  try {
+    const pkg = require('../package.json')
+    res.json({ version: pkg.version })
+  } catch { res.json({ version: '?' }) }
 })
 
 // ── SPA fallback ───────────────────────────────────────────────

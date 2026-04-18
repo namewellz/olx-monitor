@@ -53,6 +53,7 @@
       <div>
         <div class="status-text" x-text="status.running ? 'Scraper ativo' : 'Scraper parado'"></div>
         <div class="status-text" x-text="'Próximo: ' + status.nextRun"></div>
+        <div class="status-text" x-show="appVersion" x-text="'v' + appVersion" style="opacity:0.5;font-size:11px;margin-top:2px"></div>
       </div>
     </div>
   </aside>

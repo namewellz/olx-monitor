@@ -1,4 +1,3 @@
-version: "3.7"
 services:
 
   postgres:
@@ -19,8 +18,7 @@ services:
       retries: 10
 
   olx-monitor:
-    image: olx-monitor:local
-    build: .
+    image: welligtonalves/olx-monitor:3.6.0
     restart: unless-stopped
     depends_on:
       postgres:
@@ -28,11 +26,11 @@ services:
     ports:
       - "3000:3000"
     environment:
-      PGHOST:                postgres
-      PGPORT:                5432
-      PGUSER:                olxmonitor
-      PGPASSWORD:            olxmonitor
-      PGDATABASE:            olxmonitor
+      PGHOST:     postgres
+      PGPORT:     5432
+      PGUSER:     olxmonitor
+      PGPASSWORD: olxmonitor
+      PGDATABASE: olxmonitor
       DISABLE_NOTIFICATIONS: "true"
     volumes:
       - ./src/config.js:/usr/app/config.js
