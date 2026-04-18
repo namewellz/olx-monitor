@@ -236,6 +236,44 @@ function app() {
       return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
     },
 
+    // ── Backup / Restore ──────────────────────────────────
+    backupMsg: null,
+
+    async exportBackup() {
+      const a = document.createElement('a')
+      a.href = '/api/backup'
+      a.download = ''
+      a.click()
+    },
+
+    async importBackup(event) {
+      const file = event.target.files[0]
+      if (!file) return
+      this.backupMsg = null
+      try {
+        const text = await file.text()
+        const data = JSON.parse(text)
+        if (!data.version || !data.ads) throw new Error('Arquivo inválido ou corrompido')
+        const res = await this.api('/restore', { method: 'POST', body: data })
+        this.backupMsg = { ok: true, text: `✓ Importados: ${res.ads} anúncios, ${res.search_urls} URLs, ${res.logs} logs` }
+        await this.loadStats()
+        await this.loadUrls()
+      } catch (e) {
+        this.backupMsg = { ok: false, text: '✗ Erro ao importar: ' + e.message }
+      }
+      event.target.value = ''
+    },
+
+    exportCsv() {
+      const params = new URLSearchParams()
+      if (this.adsFilter.source)   params.set('source', this.adsFilter.source)
+      if (this.adsFilter.notified !== '') params.set('notified', this.adsFilter.notified)
+      const a = document.createElement('a')
+      a.href = '/api/ads/export?' + params
+      a.download = ''
+      a.click()
+    },
+
     // ── Toast (simple) ────────────────────────────────────
     showToast(msg, isError = false) {
       // minimal: just a console log for now; can be enhanced later

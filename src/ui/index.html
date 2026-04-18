@@ -265,6 +265,7 @@
               <option value="0">Pendentes</option>
               <option value="1">Notificados</option>
             </select>
+            <button class="btn btn-secondary btn-sm" @click="exportCsv()" title="Exportar CSV">↓ CSV</button>
           </div>
         </div>
 
@@ -393,6 +394,38 @@
               </div>
             </template>
           </div>
+        </div>
+
+        <!-- Backup / Restore -->
+        <div class="card" style="margin-top:16px">
+          <div class="card-header">
+            <div class="card-title"><span class="icon">💾</span> Backup e Restauração</div>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-info">
+              <div class="setting-name">Exportar backup completo</div>
+              <div class="setting-desc">Anúncios, URLs monitoradas e logs em formato JSON</div>
+            </div>
+            <button class="btn btn-secondary btn-sm" @click="exportBackup()">↓ Exportar JSON</button>
+          </div>
+
+          <div class="setting-row" style="border-bottom:none">
+            <div class="setting-info">
+              <div class="setting-name">Importar backup</div>
+              <div class="setting-desc">Restaura dados de um arquivo JSON exportado anteriormente</div>
+            </div>
+            <label class="btn btn-secondary btn-sm" style="cursor:pointer">
+              ↑ Importar JSON
+              <input type="file" accept=".json" style="display:none" @change="importBackup($event)">
+            </label>
+          </div>
+
+          <template x-if="backupMsg">
+            <div style="margin-top:12px;padding:10px 12px;background:var(--bg-input);border-radius:var(--radius-sm);border:1px solid var(--border)">
+              <span :class="backupMsg.ok ? 'text-success' : 'text-danger'" x-text="backupMsg.text"></span>
+            </div>
+          </template>
         </div>
       </div>
 

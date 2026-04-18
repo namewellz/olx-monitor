@@ -148,6 +148,94 @@ app.post('/api/run', async (req, res) => {
   res.json({ ok: true })
 })
 
+// ── Backup (JSON completo) ─────────────────────────────────────
+app.get('/api/backup', async (req, res) => {
+  try {
+    const [ads, urls, logs] = await Promise.all([
+      dbAll(`SELECT * FROM ads ORDER BY created`),
+      dbAll(`SELECT * FROM search_urls ORDER BY source, label`),
+      dbAll(`SELECT * FROM logs ORDER BY created`),
+    ])
+    const backup = {
+      version:    '1.0',
+      exportedAt: new Date().toISOString(),
+      ads,
+      search_urls: urls,
+      logs,
+    }
+    res.setHeader('Content-Disposition', `attachment; filename="olx-monitor-backup-${new Date().toISOString().slice(0,10)}.json"`)
+    res.setHeader('Content-Type', 'application/json')
+    res.send(JSON.stringify(backup, null, 2))
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ── Restore (JSON completo) ────────────────────────────────────
+app.post('/api/restore', async (req, res) => {
+  try {
+    const { ads = [], search_urls = [], logs = [] } = req.body
+    const client = await require('../database/database').query('SELECT 1').then ? null : null
+    const { Pool } = require('pg')
+    const pool = new Pool({
+      host: process.env.PGHOST || 'localhost', port: Number(process.env.PGPORT) || 5432,
+      user: process.env.PGUSER || 'olxmonitor', password: process.env.PGPASSWORD || 'olxmonitor',
+      database: process.env.PGDATABASE || 'olxmonitor',
+    })
+    const pg = await pool.connect()
+    try {
+      await pg.query('BEGIN')
+      for (const ad of ads) {
+        await pg.query(
+          `INSERT INTO ads (id, source, "searchTerm", title, price, url, notified, created, "lastUpdate")
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (id, source) DO NOTHING`,
+          [ad.id, ad.source, ad.searchTerm, ad.title, ad.price, ad.url, ad.notified, ad.created, ad.lastUpdate]
+        )
+      }
+      for (const u of search_urls) {
+        await pg.query(
+          `INSERT INTO search_urls (source, label, url, active) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
+          [u.source, u.label || '', u.url, u.active ?? 1]
+        )
+      }
+      for (const l of logs) {
+        await pg.query(
+          `INSERT INTO logs (url, "adsFound", "averagePrice", "minPrice", "maxPrice", created)
+           VALUES ($1,$2,$3,$4,$5,$6)`,
+          [l.url, l.adsFound, l.averagePrice, l.minPrice, l.maxPrice, l.created]
+        )
+      }
+      await pg.query('COMMIT')
+      res.json({ ok: true, ads: ads.length, search_urls: search_urls.length, logs: logs.length })
+    } catch (e) {
+      await pg.query('ROLLBACK')
+      throw e
+    } finally {
+      pg.release()
+      await pool.end()
+    }
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ── Export CSV (anúncios) ──────────────────────────────────────
+app.get('/api/ads/export', async (req, res) => {
+  try {
+    const { source, notified } = req.query
+    const params = []
+    let where = 'WHERE 1=1'
+    if (source)                              { params.push(source);         where += ` AND source = $${params.length}` }
+    if (notified !== undefined && notified !== '') { params.push(Number(notified)); where += ` AND notified = $${params.length}` }
+    const ads = await dbAll(`SELECT * FROM ads ${where} ORDER BY created DESC`, params)
+
+    const header = ['id','source','title','price','url','notified','created','lastUpdate','searchTerm']
+    const escape = v => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const rows   = ads.map(a => header.map(k => escape(a[k])).join(','))
+    const csv    = [header.join(','), ...rows].join('\n')
+
+    res.setHeader('Content-Disposition', `attachment; filename="anuncios-${new Date().toISOString().slice(0,10)}.csv"`)
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.send('\uFEFF' + csv) // BOM para Excel reconhecer UTF-8
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 // ── SPA fallback ───────────────────────────────────────────────
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../ui/index.html'))
