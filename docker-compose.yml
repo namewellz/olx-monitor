@@ -18,7 +18,7 @@ services:
       retries: 10
 
   olx-monitor:
-    image: welligtonalves/olx-monitor:3.6.0
+    image: welligtonalves/olx-monitor:3.6.1
     restart: unless-stopped
     depends_on:
       postgres:

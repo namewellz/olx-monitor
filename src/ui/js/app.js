@@ -243,6 +243,8 @@ function app() {
 
     // ── Backup / Restore ──────────────────────────────────
     backupMsg: null,
+    backupProgress: 0,
+    backupStatus: null, // null | 'uploading' | 'processing'
 
     async exportBackup() {
       const a = document.createElement('a')
@@ -255,17 +257,33 @@ function app() {
       const file = event.target.files[0]
       if (!file) return
       this.backupMsg = null
+      this.backupProgress = 0
+      this.backupStatus = 'uploading'
       try {
         const formData = new FormData()
         formData.append('backup', file)
-        const res = await fetch('/api/restore', { method: 'POST', body: formData })
-        if (!res.ok) throw new Error(await res.text())
-        const data = await res.json()
+        const data = await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest()
+          xhr.open('POST', '/api/restore')
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) this.backupProgress = Math.round((e.loaded / e.total) * 100)
+          }
+          xhr.upload.onload = () => { this.backupStatus = 'processing' }
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.responseText))
+            else reject(new Error(xhr.responseText))
+          }
+          xhr.onerror = () => reject(new Error('Erro de rede'))
+          xhr.send(formData)
+        })
         this.backupMsg = { ok: true, text: `✓ Importados: ${data.ads} anúncios, ${data.search_urls} URLs, ${data.logs} logs` }
         await this.loadStats()
         await this.loadUrls()
       } catch (e) {
         this.backupMsg = { ok: false, text: '✗ Erro ao importar: ' + e.message }
+      } finally {
+        this.backupStatus = null
+        this.backupProgress = 0
       }
       event.target.value = ''
     },

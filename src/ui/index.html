@@ -422,6 +422,18 @@
             </label>
           </div>
 
+          <div x-show="backupStatus" style="margin-top:12px;padding:10px 12px;background:var(--bg-input);border-radius:var(--radius-sm);border:1px solid var(--border)">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <span style="font-size:12px;color:var(--text-secondary)" x-text="backupStatus === 'uploading' ? 'Enviando arquivo… ' + backupProgress + '%' : 'Processando registros…'"></span>
+              <span x-show="backupStatus === 'uploading'" style="font-size:12px;color:var(--text-muted)" x-text="backupProgress + '%'"></span>
+            </div>
+            <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+              <div style="height:100%;border-radius:3px;transition:width 0.2s"
+                :style="backupStatus === 'processing' ? 'width:100%;background:var(--accent);opacity:0.5;animation:pulse 1s ease-in-out infinite' : 'width:' + backupProgress + '%;background:var(--accent)'">
+              </div>
+            </div>
+          </div>
+
           <template x-if="backupMsg">
             <div style="margin-top:12px;padding:10px 12px;background:var(--bg-input);border-radius:var(--radius-sm);border:1px solid var(--border)">
               <span :class="backupMsg.ok ? 'text-success' : 'text-danger'" x-text="backupMsg.text"></span>
