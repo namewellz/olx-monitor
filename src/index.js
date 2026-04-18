@@ -7,8 +7,6 @@ const { scraper: scraperZAP } = require("./components/ScraperZAP")
 const { createTables, runMigrations, query } = require("./database/database.js")
 const { processPendingNotifications } = require("./components/Notifier")
 const { startServer } = require("./api/server")
-const { autoMigrate } = require("./migrate-sqlite-to-pg")
-
 // Migração única: popula search_urls com as URLs do config.js se a tabela estiver vazia
 const seedUrlsFromConfig = async () => {
   const { rows } = await query('SELECT COUNT(*) AS n FROM search_urls')
@@ -69,7 +67,6 @@ const main = async () => {
   $logger.info("Program started")
   await createTables()
   await runMigrations()
-  await autoMigrate($logger)
   await seedUrlsFromConfig()
   await initializeCycleTLS()
   startServer(config.uiPort || 3000)
