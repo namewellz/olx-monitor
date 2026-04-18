@@ -273,11 +273,11 @@
             <table>
               <thead>
                 <tr>
-                  <th>Fonte</th>
-                  <th>Título</th>
-                  <th>Preço</th>
-                  <th>Status</th>
-                  <th>Criado em</th>
+                  <th @click="sortBy('source')" style="cursor:pointer;user-select:none">Fonte <span x-text="sortIcon('source')" style="color:var(--text-muted);font-size:10px"></span></th>
+                  <th @click="sortBy('title')"  style="cursor:pointer;user-select:none">Título <span x-text="sortIcon('title')" style="color:var(--text-muted);font-size:10px"></span></th>
+                  <th @click="sortBy('price')"  style="cursor:pointer;user-select:none">Preço <span x-text="sortIcon('price')" style="color:var(--text-muted);font-size:10px"></span></th>
+                  <th @click="sortBy('notified')" style="cursor:pointer;user-select:none">Status <span x-text="sortIcon('notified')" style="color:var(--text-muted);font-size:10px"></span></th>
+                  <th @click="sortBy('created')" style="cursor:pointer;user-select:none">Criado em <span x-text="sortIcon('created')" style="color:var(--text-muted);font-size:10px"></span></th>
                   <th></th>
                 </tr>
               </thead>
@@ -285,7 +285,7 @@
                 <template x-if="ads.length === 0">
                   <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:32px">Nenhum anúncio encontrado.</td></tr>
                 </template>
-                <template x-for="ad in ads" :key="ad.id + ad.source">
+                <template x-for="ad in sortedAds()" :key="ad.id + ad.source">
                   <tr>
                     <td><span class="badge" :class="ad.source === 'olx' ? 'badge-warning' : 'badge-info'" x-text="ad.source.toUpperCase()"></span></td>
                     <td style="max-width:280px">

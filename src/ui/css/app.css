@@ -239,7 +239,9 @@ thead th {
   color: var(--text-muted);
   padding: 10px 14px;
   border-bottom: 1px solid var(--border);
+  transition: color .15s;
 }
+thead th:hover { color: var(--text-primary); }
 tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
 tbody tr:hover { background: var(--bg-card-hover); }
 tbody td { padding: 11px 14px; color: var(--text-primary); font-size: 13px; }

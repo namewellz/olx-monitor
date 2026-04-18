@@ -14,8 +14,9 @@ function app() {
     urls: [],
     running: false,
 
-    // ── Filters ───────────────────────────────────────────
+    // ── Filters & sort ────────────────────────────────────
     adsFilter: { source: '', notified: '' },
+    adsSort: { col: 'created', dir: 'desc' },
 
     // ── Settings ──────────────────────────────────────────
     settings: {
@@ -196,6 +197,31 @@ function app() {
         await this.loadUrls()
         await this.loadStats()
       } catch {}
+    },
+
+    // ── Ads sorting ───────────────────────────────────────
+    sortBy(col) {
+      if (this.adsSort.col === col) {
+        this.adsSort.dir = this.adsSort.dir === 'asc' ? 'desc' : 'asc'
+      } else {
+        this.adsSort.col = col
+        this.adsSort.dir = col === 'created' ? 'desc' : 'asc'
+      }
+    },
+    sortedAds() {
+      const { col, dir } = this.adsSort
+      return [...this.ads].sort((a, b) => {
+        let va = a[col], vb = b[col]
+        if (col === 'price') { va = Number(va); vb = Number(vb) }
+        else { va = String(va ?? '').toLowerCase(); vb = String(vb ?? '').toLowerCase() }
+        if (va < vb) return dir === 'asc' ? -1 : 1
+        if (va > vb) return dir === 'asc' ?  1 : -1
+        return 0
+      })
+    },
+    sortIcon(col) {
+      if (this.adsSort.col !== col) return '↕'
+      return this.adsSort.dir === 'asc' ? '↑' : '↓'
     },
 
     // ── Formatters ────────────────────────────────────────
