@@ -4,7 +4,9 @@
 
 Estava procurando um imóvel no OLX e no ZAP Imóveis, e diariamente acessava minhas buscas salvas à procura de uma boa oportunidade. Um dia encontrei uma ótima oferta, mas quando entrei em contato já era tarde — o vendedor estava indo ao encontro de outro comprador e havia mais três pessoas na fila.
 
-Vi nessa situação uma oportunidade para aprender sobre scraping com `Node.js` e não perder a próxima. O projeto evoluiu para monitorar múltiplas fontes simultaneamente e enviar notificações pelo Telegram assim que um novo anúncio é encontrado ou um preço cai.
+Vi nessa situação uma oportunidade para aprender sobre scraping com `Node.js` e não perder a próxima. O projeto evoluiu para monitorar múltiplas fontes simultaneamente, enviar notificações pelo Telegram e contar com uma interface administrativa própria.
+
+---
 
 ## Funcionalidades
 
@@ -12,9 +14,12 @@ Vi nessa situação uma oportunidade para aprender sobre scraping com `Node.js` 
 - Detecta **novos anúncios** e **quedas de preço** e notifica via Telegram
 - Fila de notificações com **retry automático** (até 3 tentativas com backoff)
 - **Rate limiting** entre notificações para evitar bloqueios da API do Telegram
-- Banco de dados SQLite com coluna `source` para diferenciar anúncios de cada plataforma
+- Banco de dados **PostgreSQL** com chave composta `(id, source)` para evitar colisões entre plataformas
+- **Interface administrativa** web para acompanhar anúncios, logs e configurações
 - Suporte a múltiplas URLs de busca por fonte
 - Facilmente extensível para novas fontes (VivaReal, Imovelweb, etc.)
+
+---
 
 ## Arquitetura
 
@@ -24,23 +29,32 @@ src/
     BaseScraper.js    ← loop de paginação, stats e logs (compartilhado)
     ScraperOLX.js     ← parser específico do OLX (__NEXT_DATA__)
     ScraperZAP.js     ← parser específico do ZAP (JSON-LD + fallback HTML)
-    Ad.js             ← lógica de validação, persistência e notificação
+    Ad.js             ← validação, persistência e notificação por anúncio
     Notifier.js       ← envio Telegram com retry e fila de pendentes
     HttpClient.js     ← cliente HTTP com fingerprint TLS anti-bot
     Logger.js
     CycleTls.js
   database/
-    database.js       ← criação de tabelas e migrações
+    database.js       ← criação de tabelas e migrações (PostgreSQL)
   repositories/
     adRepository.js
     scrapperRepository.js
+  api/
+    server.js         ← servidor Express com API REST
+  ui/
+    index.html        ← interface administrativa (SPA Alpine.js)
+    css/app.css       ← design system inspirado no Portainer
+    js/app.js         ← lógica da interface
   tests/
     test-zap.js       ← teste isolado do ZAP (sem DB/Telegram)
     test-both.js      ← teste lado a lado OLX + ZAP
   index.js
-  config.js           ← suas configurações (ignorado pelo git)
-  sample-config.js    ← exemplo de configuração
+  migrate-sqlite-to-pg.js  ← script de migração de dados SQLite → PostgreSQL
+  config.js                ← suas configurações (ignorado pelo git)
+  sample-config.js         ← exemplo de configuração
 ```
+
+---
 
 ## Fluxo de funcionamento
 
@@ -57,57 +71,90 @@ cron (a cada 1 minuto)
         └─ Busca anúncios com notified=0, envia em lotes de 10
               └─ Sucesso? → marca notified=1
               └─ Falha?   → retry na próxima rodada (até 3 tentativas)
+
+Express (porta 3000)
+  └─ Serve a interface administrativa
+  └─ API REST /api/* para dados e controle
 ```
+
+---
 
 ## Instalação
 
 ### Pré-requisitos
 
-- Node.js 20+
-- npm
+- Docker e Docker Compose
 - Conta no [Telegram](https://telegram.org/) com um bot criado
 
-### Usando Node
+### Usando Docker Compose (recomendado)
 
-1. Clone o repositório:
-   ```bash
-   git clone https://github.com/namewellz/olx-monitor.git
-   cd olx-monitor/src
-   ```
+O `docker-compose.yml` já inclui o serviço do PostgreSQL. Basta seguir os passos:
 
-2. Instale as dependências:
-   ```bash
-   npm install
-   ```
+**1. Clone o repositório:**
+```bash
+git clone https://github.com/namewellz/olx-monitor.git
+cd olx-monitor
+```
 
-3. Crie o arquivo `.env` na pasta `src/` com as credenciais do Telegram:
-   ```
-   TELEGRAM_TOKEN=seu_token_aqui
-   TELEGRAM_CHAT_ID=seu_chat_id_aqui
-   ```
+**2. Crie o arquivo `.env` em `src/`:**
+```bash
+cp src/sample-config.js src/config.js
+```
 
-4. Crie o arquivo `config.js` baseado no `sample-config.js` e configure suas URLs e preferências.
+```env
+# src/.env
+TELEGRAM_TOKEN=seu_token_aqui
+TELEGRAM_CHAT_ID=seu_chat_id_aqui
+```
 
-5. Execute:
-   ```bash
-   node index.js
-   ```
+**3. Configure suas URLs em `src/config.js`** (veja seção [Configuração das buscas](#configuração-das-buscas)).
 
-6. Os arquivos de dados serão criados automaticamente em `data/`:
-   - `ads.db` — banco de dados SQLite
-   - `scrapper.log` — logs de execução
+**4. Suba os serviços:**
+```bash
+docker-compose up -d
+```
 
-### Usando Docker
+O Postgres sobe primeiro. O monitor aguarda o healthcheck antes de conectar. A interface administrativa fica disponível em **http://localhost:3000**.
 
-1. Realize os passos 1 a 4 do guia acima.
-2. Na primeira vez, faça o build da imagem:
-   ```bash
-   docker-compose build
-   ```
-3. Nas próximas execuções:
-   ```bash
-   docker-compose up
-   ```
+**5. Acompanhe os logs:**
+```bash
+docker-compose logs -f olx-monitor
+```
+
+---
+
+### Variáveis de ambiente
+
+| Variável | Padrão | Descrição |
+|---|---|---|
+| `PGHOST` | `localhost` | Host do PostgreSQL |
+| `PGPORT` | `5432` | Porta do PostgreSQL |
+| `PGUSER` | `olxmonitor` | Usuário do banco |
+| `PGPASSWORD` | `olxmonitor` | Senha do banco |
+| `PGDATABASE` | `olxmonitor` | Nome do banco |
+| `DISABLE_NOTIFICATIONS` | — | Se `true`, suprime todos os envios ao Telegram (útil em testes) |
+
+As variáveis PG já estão configuradas no `docker-compose.yml`. Para ambientes externos (VPS, cloud), basta ajustá-las.
+
+---
+
+### Usando Node diretamente (sem Docker)
+
+Requer PostgreSQL instalado e rodando localmente.
+
+```bash
+cd olx-monitor/src
+npm install
+# configure src/.env e src/config.js
+node index.js
+```
+
+Para subir apenas a interface sem o scraper (modo visualização):
+```bash
+node ui-dev.js
+```
+
+---
 
 ## Configuração do Telegram
 
@@ -120,6 +167,8 @@ Use o [@BotFather](https://t.me/BotFather) no Telegram para criar um bot e obter
 1. Crie um grupo no Telegram e adicione seu bot e o [@myidbot](https://t.me/myidbot)
 2. Digite `/getgroupid@myidbot` no grupo
 3. O bot responderá com o `CHAT_ID` — use esse valor em `TELEGRAM_CHAT_ID`
+
+---
 
 ## Configuração das buscas
 
@@ -142,29 +191,100 @@ config.interval = '*/5 * * * *'
 // true  → notifica todos os anúncios encontrados na primeira execução
 // false → só notifica anúncios novos a partir da segunda execução
 config.notifyOnFirstRun = false
+
+// Porta da interface administrativa (padrão: 3000)
+config.uiPort = 3000
 ```
 
-### Dica
+> **Dica:** Quanto mais específica for a URL de busca, mais eficiente o monitor será. Prefira buscas já filtradas por bairro, tipo de imóvel, faixa de preço e número de quartos.
 
-Quanto mais específica for a URL de busca, mais eficiente o monitor será. URLs com muitos resultados geram mais requisições e mais notificações. Prefira buscas já filtradas por bairro, tipo de imóvel, faixa de preço e número de quartos.
+> **Compatibilidade:** A chave `config.urls` (nome antigo) ainda é aceita como fallback de `config.olxUrls`.
+
+---
 
 ## Banco de dados
 
-Os anúncios são salvos em SQLite com a seguinte estrutura:
+O projeto usa **PostgreSQL**. As tabelas são criadas automaticamente na primeira execução.
 
-| Coluna       | Descrição                                      |
-|--------------|------------------------------------------------|
-| `id`         | ID do anúncio na plataforma de origem          |
-| `source`     | Origem do anúncio: `olx` ou `zap`              |
+### Estrutura
+
+**Tabela `ads`**
+
+| Coluna | Descrição |
+|---|---|
+| `id` | ID do anúncio na plataforma de origem |
+| `source` | Origem: `olx` ou `zap` |
 | `searchTerm` | Termo/caminho da busca que encontrou o anúncio |
-| `title`      | Título do anúncio                              |
-| `price`      | Preço em valor inteiro                         |
-| `url`        | Link direto para o anúncio                     |
-| `notified`   | `0` = pendente, `1` = notificação enviada      |
-| `created`    | Data de criação                                |
-| `lastUpdate` | Data da última atualização                     |
+| `title` | Título do anúncio |
+| `price` | Preço em valor inteiro |
+| `url` | Link direto para o anúncio |
+| `notified` | `0` = pendente, `1` = notificação enviada |
+| `created` | Data de criação |
+| `lastUpdate` | Data da última atualização |
 
-A chave primária é composta por `(id, source)` para evitar colisões entre plataformas que podem ter IDs numéricos coincidentes.
+Chave primária composta: `(id, source)` — evita colisões entre plataformas com IDs numéricos coincidentes.
+
+**Tabela `logs`**
+
+Registra estatísticas de cada varredura: URL pesquisada, quantidade de anúncios encontrados, preço médio, mínimo e máximo.
+
+**Tabela `search_urls`** *(gerenciada pela interface)*
+
+URLs de busca cadastradas via interface administrativa, com suporte a ativar/desativar sem reiniciar o serviço.
+
+---
+
+## Migrando de SQLite para PostgreSQL
+
+Se você usava uma versão anterior do projeto com SQLite, utilize o script de migração para transferir todos os dados:
+
+**1. Certifique-se de que o PostgreSQL está rodando:**
+```bash
+docker-compose up -d postgres
+```
+
+**2. Instale o sqlite3 temporariamente:**
+```bash
+cd src
+npm install sqlite3 --no-save
+```
+
+**3. Execute o script apontando para o arquivo do banco antigo:**
+```bash
+node migrate-sqlite-to-pg.js ../data/ads.db
+```
+
+**Saída esperada:**
+```
+📦 Fonte SQLite : ../data/ads.db
+🐘 Destino PG   : localhost:5432/olxmonitor
+
+📋 Anúncios encontrados : 380
+📋 Logs encontrados     : 572
+
+✅ Ads   : 380 migrados
+✅ Logs  : 572 migrados
+
+✨ Migração concluída com sucesso!
+```
+
+O script usa `ON CONFLICT DO NOTHING` — pode ser executado mais de uma vez sem duplicar registros.
+
+---
+
+## Interface administrativa
+
+Acesse **http://localhost:3000** após subir os serviços.
+
+| Página | Descrição |
+|---|---|
+| **Dashboard** | Visão geral: contadores, últimas notificações, status do sistema |
+| **URLs Monitoradas** | Cadastro e gerenciamento de URLs por fonte (OLX/ZAP) |
+| **Anúncios** | Listagem completa com filtros por fonte e status de notificação |
+| **Configurações** | Intervalo de varredura, credenciais Telegram e teste de envio |
+| **Logs** | Histórico de varreduras com estatísticas de preço |
+
+---
 
 ## Adicionando uma nova fonte
 
@@ -185,6 +305,8 @@ module.exports = {
 ```
 
 Depois basta registrar em `index.js` e adicionar `config.vivarealUrls` no `config.js`.
+
+---
 
 ## Considerações
 
