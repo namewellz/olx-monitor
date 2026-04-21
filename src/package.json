@@ -1,6 +1,6 @@
 {
   "name": "olx-monitor",
-  "version": "3.8.0",
+  "version": "3.8.1",
   "description": "Programa que monitora novos anúncios feitos no OLX, alteração de preços em anúncios existentes e envia notificações pelo Telegram.",
   "main": "index.js",
   "dependencies": {

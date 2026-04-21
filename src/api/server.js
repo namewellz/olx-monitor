@@ -225,7 +225,11 @@ app.post('/api/restore', upload.single('backup'), async (req, res) => {
             `INSERT INTO ads (id, source, "searchTerm", title, price, url, notified, created, "lastUpdate",
                               hash_indexed, hash_attempts, group_id, description)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-             ON CONFLICT (id, source) DO NOTHING`,
+             ON CONFLICT (id, source) DO UPDATE SET
+               hash_indexed  = EXCLUDED.hash_indexed,
+               hash_attempts = EXCLUDED.hash_attempts,
+               group_id      = COALESCE(EXCLUDED.group_id,     ads.group_id),
+               description   = COALESCE(EXCLUDED.description,  ads.description)`,
             [
               ad.id, ad.source, ad.searchTerm, ad.title, ad.price, ad.url,
               ad.notified, ad.created, ad.lastUpdate,
