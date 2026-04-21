@@ -8,15 +8,16 @@ const adRepository = require('../repositories/adRepository.js')
 class Ad {
 
     constructor(ad) {
-        this.id         = ad.id
-        this.source     = ad.source || 'olx'
-        this.url        = ad.url
-        this.title      = ad.title
-        this.searchTerm = ad.searchTerm
-        this.price      = ad.price
-        this.valid      = false
-        this.saved      = null,
-        this.notify     = ad.notify
+        this.id          = ad.id
+        this.source      = ad.source || 'olx'
+        this.url         = ad.url
+        this.title       = ad.title
+        this.searchTerm  = ad.searchTerm
+        this.price       = ad.price
+        this.description = ad.description || null
+        this.valid       = false
+        this.saved       = null,
+        this.notify      = ad.notify
     }
 
     process = async () => {

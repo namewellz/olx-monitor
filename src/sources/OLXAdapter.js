@@ -7,14 +7,15 @@ const BaseAdapter = require('./BaseAdapter')
 class OLXAdapter extends BaseAdapter {
   get source() { return 'olx' }
 
-  async extractImageUrls(ad) {
+  async extractAdData(ad) {
     try {
       const html = await httpClient(ad.url)
-      if (!html) return []
+      if (!html) return { imageUrls: [], description: null }
       const $ = cheerio.load(html)
       const urls = []
+      let description = null
 
-      // Primary: JSON-LD contém todas as imagens (SSR renderiza apenas 5)
+      // JSON-LD BuyAction: imagens + descrição numa única passagem
       $('script[type="application/ld+json"]').each((_, el) => {
         try {
           const obj    = JSON.parse($(el).html())
@@ -25,10 +26,13 @@ class OLXAdapter extends BaseAdapter {
               urls.push(url.replace(/\.(jpg|jpeg|png)$/i, '.webp'))
             }
           }
+          if (!description && obj.Object?.description) {
+            description = obj.Object.description.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').trim()
+          }
         } catch {}
       })
 
-      // Fallback: srcset do carrossel SSR (breakpoint desktop)
+      // Fallback imagens: srcset do carrossel SSR (breakpoint desktop)
       if (urls.length === 0) {
         $('#gallery source[type="image/webp"]').each((_, el) => {
           const media = $(el).attr('media') || ''
@@ -40,10 +44,10 @@ class OLXAdapter extends BaseAdapter {
       }
 
       $logger.info(`[OLXAdapter] ${urls.length} image(s) found for ad ${ad.id}`)
-      return urls
+      return { imageUrls: urls, description }
     } catch (err) {
-      $logger.error(`[OLXAdapter] Error extracting images for ad ${ad.id}: ${err.message}`)
-      return []
+      $logger.error(`[OLXAdapter] Error extracting data for ad ${ad.id}: ${err.message}`)
+      return { imageUrls: [], description: null }
     }
   }
 }

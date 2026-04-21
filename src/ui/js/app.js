@@ -6,7 +6,8 @@ function app() {
 
     // ── Data ──────────────────────────────────────────────
     appVersion: '',
-    stats: { total: 0, pending: 0, notified: 0, activeUrls: 0, olxCount: 0, zapCount: 0 },
+    stats: { total: 0, pending: 0, notified: 0, activeUrls: 0, olxCount: 0, zapCount: 0, dupGroups: 0, indexPending: 0 },
+    groups: [],
     status: { running: true, interval: '*/5 * * * *', nextRun: '--:--', telegram: false },
     recentAds: [],
     lastLog: null,
@@ -50,22 +51,26 @@ function app() {
         this.loadStatus()
         this.loadRecentAds()
         this.loadLastLog()
+        if (this.page === 'ads')    this.loadAds()
+        if (this.page === 'groups') this.loadGroups()
       }, 30_000)
     },
 
     navigate(p) {
       this.page = p
-      if (p === 'ads') this.loadAds()
-      if (p === 'logs') this.loadLogs()
+      if (p === 'ads')    this.loadAds()
+      if (p === 'logs')   this.loadLogs()
+      if (p === 'groups') this.loadGroups()
     },
 
     pageTitle() {
       const titles = {
         dashboard: 'Dashboard',
-        urls: 'URLs Monitoradas',
-        ads: 'Anúncios',
-        settings: 'Configurações',
-        logs: 'Logs',
+        urls:      'URLs Monitoradas',
+        ads:       'Anúncios',
+        groups:    'Duplicatas',
+        settings:  'Configurações',
+        logs:      'Logs',
       }
       return titles[this.page] || ''
     },
@@ -114,6 +119,9 @@ function app() {
     },
     async loadSettings() {
       try { Object.assign(this.settings, await this.api('/settings')) } catch {}
+    },
+    async loadGroups() {
+      try { this.groups = await this.api('/groups') } catch {}
     },
     async loadVersion() {
       try { const v = await this.api('/version'); this.appVersion = v.version || '' } catch {}
@@ -276,7 +284,10 @@ function app() {
           xhr.onerror = () => reject(new Error('Erro de rede'))
           xhr.send(formData)
         })
-        this.backupMsg = { ok: true, text: `✓ Importados: ${data.ads} anúncios, ${data.search_urls} URLs, ${data.logs} logs` }
+        const parts = [`${data.ads} anúncios`, `${data.search_urls} URLs`, `${data.logs} logs`]
+        if (data.property_groups) parts.push(`${data.property_groups} grupos`)
+        if (data.ad_image_hashes) parts.push(`${data.ad_image_hashes} hashes de imagem`)
+        this.backupMsg = { ok: true, text: `✓ Importados: ${parts.join(', ')}` }
         await this.loadStats()
         await this.loadUrls()
       } catch (e) {

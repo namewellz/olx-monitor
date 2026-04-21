@@ -33,10 +33,10 @@ const createAd = async (ad) => {
   $logger.debug('adRepository: createAd')
   const now = new Date().toISOString()
   await query(
-    `INSERT INTO ads (id, source, url, title, "searchTerm", price, created, "lastUpdate", hash_indexed)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE)
+    `INSERT INTO ads (id, source, url, title, "searchTerm", price, description, created, "lastUpdate", hash_indexed)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, FALSE)
      ON CONFLICT (id, source) DO NOTHING`,
-    [ad.id, ad.source, ad.url, ad.title, ad.searchTerm, ad.price, now, now]
+    [ad.id, ad.source, ad.url, ad.title, ad.searchTerm, ad.price, ad.description || null, now, now]
   )
 }
 

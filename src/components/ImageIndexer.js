@@ -1,10 +1,25 @@
 'use strict'
+const fs                 = require('fs')
+const path               = require('path')
 const { query }          = require('../database/database')
 const { downloadImages } = require('./ImageDownloader')
 const { hashAll }        = require('./Hasher')
 const { compare }        = require('./Comparator')
 const $logger            = require('./Logger')
 const adapters           = require('../sources')
+
+const DATA_DIR = process.env.DATA_DIR || '/usr/data'
+
+function saveImagesToDisk(ad, buffers) {
+  const dir = path.join(DATA_DIR, 'images', ad.source, String(ad.id))
+  fs.mkdirSync(dir, { recursive: true })
+  for (let i = 0; i < buffers.length; i++) {
+    const { url, buffer } = buffers[i]
+    if (!buffer) continue
+    const ext = (url.split('.').pop().split('?')[0] || 'jpg').slice(0, 5)
+    fs.writeFileSync(path.join(dir, `img_${i + 1}.${ext}`), buffer)
+  }
+}
 
 const PRICE_TOLERANCE = 0.20   // ±20% na busca de candidatos
 const GROUP_THRESHOLD = 0.70   // cobertura mínima para considerar duplicata
@@ -109,16 +124,23 @@ async function indexAd(ad) {
   try {
     $logger.info(`[ImageIndexer] Indexing ad ${ad.id} [${ad.source}]`)
 
-    // 1. Busca URLs de imagem na página do anúncio
-    const imageUrls = await adapter.extractImageUrls(ad)
+    // 1. Busca imagens e descrição na página do anúncio (uma única requisição)
+    const { imageUrls, description } = await adapter.extractAdData(ad)
+
+    if (description) {
+      await query(`UPDATE ads SET description = $1 WHERE id = $2 AND source = $3`, [description, ad.id, ad.source])
+      $logger.info(`[ImageIndexer] Description saved for ad ${ad.id}`)
+    }
+
     if (imageUrls.length === 0) {
       $logger.warn(`[ImageIndexer] No images for ad ${ad.id} — indexing without group`)
       await markIndexed(ad, await getOrCreateGroup(null))
       return
     }
 
-    // 2. Download das imagens + cálculo de pHash
+    // 2. Download das imagens + salva em disco + cálculo de pHash
     const buffers = await downloadImages(imageUrls)
+    saveImagesToDisk(ad, buffers)
     const hashes  = await hashAll(buffers)
     const valid   = hashes.filter(h => h.hash !== null)
 

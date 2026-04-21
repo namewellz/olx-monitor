@@ -9,12 +9,12 @@ class BaseAdapter {
   get source() { throw new Error('source not implemented') }
 
   /**
-   * Dado um ad (row da tabela ads), retorna array de URLs de imagem.
-   * Pode fazer requisição HTTP se necessário.
+   * Dado um ad (row da tabela ads), retorna imagens e descrição extraídas da página individual.
+   * Uma única requisição HTTP serve para ambos os dados.
    * @param {object} ad
-   * @returns {Promise<string[]>}
+   * @returns {Promise<{ imageUrls: string[], description: string|null }>}
    */
-  async extractImageUrls(ad) { throw new Error('extractImageUrls not implemented') }
+  async extractAdData(ad) { throw new Error('extractAdData not implemented') }
 }
 
 module.exports = BaseAdapter

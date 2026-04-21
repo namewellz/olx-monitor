@@ -7,23 +7,27 @@ const BaseAdapter = require('./BaseAdapter')
 class ZAPAdapter extends BaseAdapter {
   get source() { return 'zap' }
 
-  async extractImageUrls(ad) {
+  async extractAdData(ad) {
     try {
       const html = await httpClient(ad.url)
-      if (!html) return []
+      if (!html) return { imageUrls: [], description: null }
       const $ = cheerio.load(html)
       const byHash = new Map()
+      let description = null
 
       $('script[type="application/ld+json"]').each((_, el) => {
         try {
           const obj  = JSON.parse($(el).html())
+          // Descrição: apenas do Product (ignora Organization que é texto auto-gerado)
+          if (!description && obj['@type'] === 'Product' && obj.description) {
+            description = obj.description.trim()
+          }
           const hits = JSON.stringify(obj).match(
             /https:\/\/resizedimgs\.zapimoveis\.com\.br\/img\/vr-listing\/([a-f0-9]{32})\/[^"]+/g
           ) || []
           for (let url of hits) {
             const m = url.match(/\/vr-listing\/([a-f0-9]{32})\//)
             if (!m) continue
-            // Máxima resolução disponível no resizer do ZAP
             url = url.replace(/dimension=\d+x\d+/, 'dimension=1600x1200')
             if (!byHash.has(m[1]) || url.length > byHash.get(m[1]).length) {
               byHash.set(m[1], url)
@@ -41,12 +45,12 @@ class ZAPAdapter extends BaseAdapter {
         })
       }
 
-      const urls = [...byHash.values()]
-      $logger.info(`[ZAPAdapter] ${urls.length} image(s) found for ad ${ad.id}`)
-      return urls
+      const imageUrls = [...byHash.values()]
+      $logger.info(`[ZAPAdapter] ${imageUrls.length} image(s) found for ad ${ad.id}`)
+      return { imageUrls, description }
     } catch (err) {
-      $logger.error(`[ZAPAdapter] Error extracting images for ad ${ad.id}: ${err.message}`)
-      return []
+      $logger.error(`[ZAPAdapter] Error extracting data for ad ${ad.id}: ${err.message}`)
+      return { imageUrls: [], description: null }
     }
   }
 }
