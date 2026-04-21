@@ -33,8 +33,8 @@ const createAd = async (ad) => {
   $logger.debug('adRepository: createAd')
   const now = new Date().toISOString()
   await query(
-    `INSERT INTO ads (id, source, url, title, "searchTerm", price, created, "lastUpdate")
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO ads (id, source, url, title, "searchTerm", price, created, "lastUpdate", hash_indexed)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE)
      ON CONFLICT (id, source) DO NOTHING`,
     [ad.id, ad.source, ad.url, ad.title, ad.searchTerm, ad.price, now, now]
   )
@@ -49,7 +49,10 @@ const updateAd = async (ad) => {
 }
 
 const getPendingNotifications = async () => {
-  const { rows } = await query(`SELECT * FROM ads WHERE notified = 0`)
+  // hash_indexed = TRUE garante que o indexer já rodou antes de notificar
+  const { rows } = await query(
+    `SELECT * FROM ads WHERE notified = 0 AND hash_indexed = TRUE`
+  )
   return rows
 }
 

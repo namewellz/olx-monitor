@@ -6,6 +6,7 @@ const { scraper: scraperOLX } = require("./components/ScraperOLX")
 const { scraper: scraperZAP } = require("./components/ScraperZAP")
 const { createTables, runMigrations, query } = require("./database/database.js")
 const { processPendingNotifications } = require("./components/Notifier")
+const { runIndexer } = require("./components/ImageIndexer")
 const { startServer } = require("./api/server")
 // Migração única: popula search_urls com as URLs do config.js se a tabela estiver vazia
 const seedUrlsFromConfig = async () => {
@@ -50,6 +51,9 @@ const runScraper = async () => {
       $logger.error(`[scraper] Erro em ${row.source} ${row.url}: ${error.message}`)
     }
   }
+
+  // Processa imagens dos novos anúncios encontrados neste ciclo
+  await runIndexer()
 }
 
 const runNotifier = async () => {

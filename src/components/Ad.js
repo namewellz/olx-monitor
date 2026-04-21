@@ -53,25 +53,20 @@ class Ad {
     }
 
     addToDataBase = async () => {
-
         try {
             await adRepository.createAd(this)
             $logger.info('Ad ' + this.id + ' added to the database')
-        }
-
-        catch (error) {
+        } catch (error) {
             $logger.error(error)
         }
 
-        if (this.notify) {
-            try {
-                const source = this.source.toUpperCase()
-                const msg = `[${source}] New ad found!\n${this.title}\nR$${this.price.toLocaleString('pt-BR')}\n\n${this.url}`
-                notifier.sendNotification(msg, this.id, this.source)
-            } catch (error) {
-                $logger.error('Could not send a notification')
-            }
+        // Se notify=false (primeira execução da URL), suprime notificação
+        // marcando o ad como já notificado logo após salvar
+        if (!this.notify) {
+            try { await adRepository.markAsNotified(this.id, this.source) } catch {}
         }
+        // Se notify=true: o indexer processa o ad e, ao marcar hash_indexed=TRUE,
+        // a fila do Notifier o enviará no próximo ciclo (a cada minuto)
     }
 
     updatePrice = async () => {

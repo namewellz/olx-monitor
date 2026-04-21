@@ -53,6 +53,36 @@ const createTables = async () => {
 const runMigrations = async () => {
   await query(`ALTER TABLE ads ADD COLUMN IF NOT EXISTS notified INTEGER NOT NULL DEFAULT 0`)
   await query(`ALTER TABLE ads ADD COLUMN IF NOT EXISTS source   TEXT    NOT NULL DEFAULT 'olx'`)
+
+  // ── Detecção de duplicatas por pHash ──────────────────────────
+  // Agrupa anúncios que representam o mesmo imóvel físico
+  await query(`
+    CREATE TABLE IF NOT EXISTS property_groups (
+      id      SERIAL  PRIMARY KEY,
+      created TEXT    NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+    )
+  `)
+
+  // Hash perceptual de cada imagem de cada anúncio
+  await query(`
+    CREATE TABLE IF NOT EXISTS ad_image_hashes (
+      id         SERIAL  PRIMARY KEY,
+      ad_id      TEXT    NOT NULL,
+      ad_source  TEXT    NOT NULL,
+      image_url  TEXT    NOT NULL,
+      phash      CHAR(64) NOT NULL,
+      created    TEXT    NOT NULL DEFAULT to_char(NOW(), 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+      UNIQUE (ad_id, ad_source, image_url)
+    )
+  `)
+  await query(`CREATE INDEX IF NOT EXISTS idx_ad_image_hashes_ad ON ad_image_hashes (ad_id, ad_source)`)
+
+  // Colunas adicionais em ads
+  // DEFAULT TRUE: anúncios existentes são marcados como já indexados
+  // Novos anúncios são inseridos explicitamente com hash_indexed = FALSE
+  await query(`ALTER TABLE ads ADD COLUMN IF NOT EXISTS hash_indexed  BOOLEAN  NOT NULL DEFAULT TRUE`)
+  await query(`ALTER TABLE ads ADD COLUMN IF NOT EXISTS hash_attempts SMALLINT NOT NULL DEFAULT 0`)
+  await query(`ALTER TABLE ads ADD COLUMN IF NOT EXISTS group_id      INTEGER  REFERENCES property_groups(id)`)
 }
 
 module.exports = { query, createTables, runMigrations }
