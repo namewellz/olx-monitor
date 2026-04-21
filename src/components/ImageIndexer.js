@@ -124,13 +124,31 @@ async function indexAd(ad) {
   try {
     $logger.info(`[ImageIndexer] Indexing ad ${ad.id} [${ad.source}]`)
 
-    // 1. Busca imagens e descrição na página do anúncio (uma única requisição)
-    const { imageUrls, description } = await adapter.extractAdData(ad)
+    // 1. Busca imagens, descrição, anunciante e datas (uma única requisição)
+    const { imageUrls, description, advertiser, publishedAt, updatedAt } = await adapter.extractAdData(ad)
 
-    if (description) {
-      await query(`UPDATE ads SET description = $1 WHERE id = $2 AND source = $3`, [description, ad.id, ad.source])
-      $logger.info(`[ImageIndexer] Description saved for ad ${ad.id}`)
+    // Persiste anunciante e atualiza ad
+    let advertiserId = null
+    if (advertiser?.name) {
+      const { rows } = await query(
+        `INSERT INTO advertisers (source, external_id, name)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (source, external_id) DO UPDATE SET name = EXCLUDED.name
+         RETURNING id`,
+        [ad.source, advertiser.externalId, advertiser.name]
+      )
+      advertiserId = rows[0].id
     }
+    await query(
+      `UPDATE ads SET
+         description   = COALESCE($1, description),
+         advertiser_id = COALESCE($2, advertiser_id),
+         published_at  = COALESCE($3, published_at),
+         updated_at    = COALESCE($4, updated_at)
+       WHERE id = $5 AND source = $6`,
+      [description, advertiserId, publishedAt, updatedAt, ad.id, ad.source]
+    )
+    if (description || advertiserId) $logger.info(`[ImageIndexer] Metadata saved for ad ${ad.id}`)
 
     if (imageUrls.length === 0) {
       $logger.warn(`[ImageIndexer] No images for ad ${ad.id} — indexing without group`)

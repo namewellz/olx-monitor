@@ -12,7 +12,7 @@ class BaseAdapter {
    * Dado um ad (row da tabela ads), retorna imagens e descrição extraídas da página individual.
    * Uma única requisição HTTP serve para ambos os dados.
    * @param {object} ad
-   * @returns {Promise<{ imageUrls: string[], description: string|null }>}
+   * @returns {Promise<{ imageUrls: string[], description: string|null, advertiser: {name:string,externalId:string}|null, publishedAt: string|null, updatedAt: string|null }>}
    */
   async extractAdData(ad) { throw new Error('extractAdData not implemented') }
 }

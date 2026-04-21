@@ -84,6 +84,20 @@ const runMigrations = async () => {
   await query(`ALTER TABLE ads ADD COLUMN IF NOT EXISTS hash_attempts SMALLINT NOT NULL DEFAULT 0`)
   await query(`ALTER TABLE ads ADD COLUMN IF NOT EXISTS group_id      INTEGER  REFERENCES property_groups(id)`)
   await query(`ALTER TABLE ads ADD COLUMN IF NOT EXISTS description   TEXT`)
+
+  // ── Anunciantes ───────────────────────────────────────────────
+  await query(`
+    CREATE TABLE IF NOT EXISTS advertisers (
+      id          SERIAL  PRIMARY KEY,
+      source      TEXT    NOT NULL,
+      external_id TEXT    NOT NULL,
+      name        TEXT    NOT NULL,
+      UNIQUE (source, external_id)
+    )
+  `)
+  await query(`ALTER TABLE ads ADD COLUMN IF NOT EXISTS advertiser_id INTEGER REFERENCES advertisers(id)`)
+  await query(`ALTER TABLE ads ADD COLUMN IF NOT EXISTS published_at  TEXT`)
+  await query(`ALTER TABLE ads ADD COLUMN IF NOT EXISTS updated_at    TEXT`)
 }
 
 module.exports = { query, createTables, runMigrations }

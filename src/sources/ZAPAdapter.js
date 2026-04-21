@@ -45,12 +45,26 @@ class ZAPAdapter extends BaseAdapter {
         })
       }
 
+      // Anunciante + datas: extraídos de script inline (JSON embutido pela SSR do ZAP)
+      let advertiser  = null
+      let publishedAt = null
+      let updatedAt   = null
+
+      const advMatch = html.match(/"advertiser"\s*:\s*\{"id"\s*:\s*"([^"]+)"[^}]{0,200}"name"\s*:\s*"([^"]+)"/)
+      if (advMatch) advertiser = { externalId: advMatch[1], name: advMatch[2] }
+
+      const createdMatch = html.match(/"createdAt"\s*:\s*"(20\d\d-[^"]{10,30})"/)
+      if (createdMatch) publishedAt = createdMatch[1]
+
+      const updatedMatch = html.match(/"updatedAt"\s*:\s*"(20\d\d-[^"]{10,30})"/)
+      if (updatedMatch) updatedAt = updatedMatch[1]
+
       const imageUrls = [...byHash.values()]
       $logger.info(`[ZAPAdapter] ${imageUrls.length} image(s) found for ad ${ad.id}`)
-      return { imageUrls, description }
+      return { imageUrls, description, advertiser, publishedAt, updatedAt }
     } catch (err) {
       $logger.error(`[ZAPAdapter] Error extracting data for ad ${ad.id}: ${err.message}`)
-      return { imageUrls: [], description: null }
+      return { imageUrls: [], description: null, advertiser: null, publishedAt: null, updatedAt: null }
     }
   }
 }

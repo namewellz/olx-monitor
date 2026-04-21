@@ -15,7 +15,10 @@ class OLXAdapter extends BaseAdapter {
       const urls = []
       let description = null
 
-      // JSON-LD BuyAction: imagens + descrição numa única passagem
+      let advertiser  = null
+      let publishedAt = null
+
+      // JSON-LD BuyAction: imagens + descrição + anunciante numa única passagem
       $('script[type="application/ld+json"]').each((_, el) => {
         try {
           const obj    = JSON.parse($(el).html())
@@ -29,8 +32,15 @@ class OLXAdapter extends BaseAdapter {
           if (!description && obj.Object?.description) {
             description = obj.Object.description.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').trim()
           }
+          if (!advertiser && obj.seller?.name) {
+            advertiser = { name: obj.seller.name, externalId: obj.seller.name }
+          }
         } catch {}
       })
+
+      // Data de publicação: origListTime (Unix timestamp 10 dígitos no HTML)
+      const tsMatch = html.match(/origListTime(?:&quot;|"):(\d{10})/)
+      if (tsMatch) publishedAt = new Date(Number(tsMatch[1]) * 1000).toISOString()
 
       // Fallback imagens: srcset do carrossel SSR (breakpoint desktop)
       if (urls.length === 0) {
@@ -44,10 +54,10 @@ class OLXAdapter extends BaseAdapter {
       }
 
       $logger.info(`[OLXAdapter] ${urls.length} image(s) found for ad ${ad.id}`)
-      return { imageUrls: urls, description }
+      return { imageUrls: urls, description, advertiser, publishedAt, updatedAt: null }
     } catch (err) {
       $logger.error(`[OLXAdapter] Error extracting data for ad ${ad.id}: ${err.message}`)
-      return { imageUrls: [], description: null }
+      return { imageUrls: [], description: null, advertiser: null, publishedAt: null, updatedAt: null }
     }
   }
 }

@@ -159,21 +159,23 @@ app.post('/api/run', async (req, res) => {
 // ── Backup (JSON completo) ─────────────────────────────────────
 app.get('/api/backup', async (req, res) => {
   try {
-    const [ads, urls, logs, groups, hashes] = await Promise.all([
+    const [ads, urls, logs, groups, hashes, advertisers] = await Promise.all([
       dbAll(`SELECT * FROM ads ORDER BY created`),
       dbAll(`SELECT * FROM search_urls ORDER BY source, label`),
       dbAll(`SELECT * FROM logs ORDER BY created`),
       dbAll(`SELECT * FROM property_groups ORDER BY id`).catch(() => []),
       dbAll(`SELECT * FROM ad_image_hashes ORDER BY id`).catch(() => []),
+      dbAll(`SELECT * FROM advertisers ORDER BY id`).catch(() => []),
     ])
     const backup = {
-      version:          '2.0',
+      version:          '2.1',
       exportedAt:       new Date().toISOString(),
       ads,
       search_urls:      urls,
       logs,
       property_groups:  groups,
       ad_image_hashes:  hashes,
+      advertisers,
     }
     res.setHeader('Content-Disposition', `attachment; filename="olx-monitor-backup-${new Date().toISOString().slice(0,10)}.json"`)
     res.setHeader('Content-Type', 'application/json')
@@ -186,7 +188,7 @@ app.post('/api/restore', upload.single('backup'), async (req, res) => {
   const filePath = req.file?.path
   if (!filePath) return res.status(400).json({ error: 'Nenhum arquivo enviado' })
   const BATCH = 200
-  let adsOk = 0, urlsOk = 0, logsOk = 0, groupsOk = 0, hashesOk = 0
+  let adsOk = 0, urlsOk = 0, logsOk = 0, groupsOk = 0, hashesOk = 0, advertisersOk = 0
   const { Pool } = require('pg')
   const pool = new Pool({
     host: process.env.PGHOST || 'localhost', port: Number(process.env.PGPORT) || 5432,
@@ -195,10 +197,28 @@ app.post('/api/restore', upload.single('backup'), async (req, res) => {
   })
   try {
     const raw = fs.readFileSync(filePath, 'utf8')
-    const { ads = [], search_urls = [], logs = [], property_groups = [], ad_image_hashes = [] } = JSON.parse(raw)
+    const { ads = [], search_urls = [], logs = [], property_groups = [], ad_image_hashes = [], advertisers = [] } = JSON.parse(raw)
     const pg = await pool.connect()
     try {
-      // 1. property_groups — deve vir antes de ads (FK group_id)
+      // 1. advertisers — deve vir antes de ads (FK advertiser_id)
+      for (let i = 0; i < advertisers.length; i += BATCH) {
+        const batch = advertisers.slice(i, i + BATCH)
+        await pg.query('BEGIN')
+        for (const a of batch) {
+          await pg.query(
+            `INSERT INTO advertisers (id, source, external_id, name)
+             VALUES ($1, $2, $3, $4) ON CONFLICT (source, external_id) DO UPDATE SET name = EXCLUDED.name`,
+            [a.id, a.source, a.external_id, a.name]
+          )
+          advertisersOk++
+        }
+        await pg.query('COMMIT')
+      }
+      if (advertisers.length > 0) {
+        await pg.query(`SELECT setval('advertisers_id_seq', COALESCE((SELECT MAX(id) FROM advertisers), 1))`)
+      }
+
+      // 2. property_groups — deve vir antes de ads (FK group_id)
       for (let i = 0; i < property_groups.length; i += BATCH) {
         const batch = property_groups.slice(i, i + BATCH)
         await pg.query('BEGIN')
@@ -223,18 +243,23 @@ app.post('/api/restore', upload.single('backup'), async (req, res) => {
         for (const ad of batch) {
           await pg.query(
             `INSERT INTO ads (id, source, "searchTerm", title, price, url, notified, created, "lastUpdate",
-                              hash_indexed, hash_attempts, group_id, description)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+                              hash_indexed, hash_attempts, group_id, description,
+                              advertiser_id, published_at, updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
              ON CONFLICT (id, source) DO UPDATE SET
                hash_indexed  = EXCLUDED.hash_indexed,
                hash_attempts = EXCLUDED.hash_attempts,
-               group_id      = COALESCE(EXCLUDED.group_id,     ads.group_id),
-               description   = COALESCE(EXCLUDED.description,  ads.description)`,
+               group_id      = COALESCE(EXCLUDED.group_id,      ads.group_id),
+               description   = COALESCE(EXCLUDED.description,   ads.description),
+               advertiser_id = COALESCE(EXCLUDED.advertiser_id, ads.advertiser_id),
+               published_at  = COALESCE(EXCLUDED.published_at,  ads.published_at),
+               updated_at    = COALESCE(EXCLUDED.updated_at,    ads.updated_at)`,
             [
               ad.id, ad.source, ad.searchTerm, ad.title, ad.price, ad.url,
               ad.notified, ad.created, ad.lastUpdate,
               ad.hash_indexed ?? true, ad.hash_attempts ?? 0, ad.group_id ?? null,
-              ad.description ?? null,
+              ad.description ?? null, ad.advertiser_id ?? null,
+              ad.published_at ?? null, ad.updated_at ?? null,
             ]
           )
           adsOk++
@@ -286,7 +311,7 @@ app.post('/api/restore', upload.single('backup'), async (req, res) => {
         await pg.query('COMMIT')
       }
 
-      res.json({ ok: true, ads: adsOk, search_urls: urlsOk, logs: logsOk, property_groups: groupsOk, ad_image_hashes: hashesOk })
+      res.json({ ok: true, ads: adsOk, search_urls: urlsOk, logs: logsOk, property_groups: groupsOk, ad_image_hashes: hashesOk, advertisers: advertisersOk })
     } finally {
       pg.release()
       await pool.end()
