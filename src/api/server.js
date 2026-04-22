@@ -159,16 +159,17 @@ app.post('/api/run', async (req, res) => {
 // ── Backup (JSON completo) ─────────────────────────────────────
 app.get('/api/backup', async (req, res) => {
   try {
-    const [ads, urls, logs, groups, hashes, advertisers] = await Promise.all([
+    const [ads, urls, logs, groups, hashes, advertisers, adSearchUrls] = await Promise.all([
       dbAll(`SELECT * FROM ads ORDER BY created`),
       dbAll(`SELECT * FROM search_urls ORDER BY source, label`),
       dbAll(`SELECT * FROM logs ORDER BY created`),
       dbAll(`SELECT * FROM property_groups ORDER BY id`).catch(() => []),
       dbAll(`SELECT * FROM ad_image_hashes ORDER BY id`).catch(() => []),
       dbAll(`SELECT * FROM advertisers ORDER BY id`).catch(() => []),
+      dbAll(`SELECT * FROM ad_search_urls ORDER BY ad_id, ad_source, search_url_id`).catch(() => []),
     ])
     const backup = {
-      version:          '2.1',
+      version:          '2.2',
       exportedAt:       new Date().toISOString(),
       ads,
       search_urls:      urls,
@@ -176,6 +177,7 @@ app.get('/api/backup', async (req, res) => {
       property_groups:  groups,
       ad_image_hashes:  hashes,
       advertisers,
+      ad_search_urls:   adSearchUrls,
     }
     res.setHeader('Content-Disposition', `attachment; filename="olx-monitor-backup-${new Date().toISOString().slice(0,10)}.json"`)
     res.setHeader('Content-Type', 'application/json')
@@ -188,7 +190,7 @@ app.post('/api/restore', upload.single('backup'), async (req, res) => {
   const filePath = req.file?.path
   if (!filePath) return res.status(400).json({ error: 'Nenhum arquivo enviado' })
   const BATCH = 200
-  let adsOk = 0, urlsOk = 0, logsOk = 0, groupsOk = 0, hashesOk = 0, advertisersOk = 0
+  let adsOk = 0, urlsOk = 0, logsOk = 0, groupsOk = 0, hashesOk = 0, advertisersOk = 0, adSearchUrlsOk = 0
   const { Pool } = require('pg')
   const pool = new Pool({
     host: process.env.PGHOST || 'localhost', port: Number(process.env.PGPORT) || 5432,
@@ -197,7 +199,7 @@ app.post('/api/restore', upload.single('backup'), async (req, res) => {
   })
   try {
     const raw = fs.readFileSync(filePath, 'utf8')
-    const { ads = [], search_urls = [], logs = [], property_groups = [], ad_image_hashes = [], advertisers = [] } = JSON.parse(raw)
+    const { ads = [], search_urls = [], logs = [], property_groups = [], ad_image_hashes = [], advertisers = [], ad_search_urls = [] } = JSON.parse(raw)
     const pg = await pool.connect()
     try {
       // 1. advertisers — deve vir antes de ads (FK advertiser_id)
@@ -296,7 +298,25 @@ app.post('/api/restore', upload.single('backup'), async (req, res) => {
         await pg.query('COMMIT')
       }
 
-      // 5. logs
+      // 5. ad_search_urls — após ads e search_urls (FK para ambos)
+      for (let i = 0; i < ad_search_urls.length; i += BATCH) {
+        const batch = ad_search_urls.slice(i, i + BATCH)
+        await pg.query('BEGIN')
+        for (const r of batch) {
+          await pg.query(
+            `INSERT INTO ad_search_urls (ad_id, ad_source, search_url_id, first_seen, last_seen, missing_count)
+             VALUES ($1,$2,$3,$4,$5,$6)
+             ON CONFLICT (ad_id, ad_source, search_url_id) DO UPDATE SET
+               last_seen     = EXCLUDED.last_seen,
+               missing_count = EXCLUDED.missing_count`,
+            [r.ad_id, r.ad_source, r.search_url_id, r.first_seen, r.last_seen, r.missing_count ?? 0]
+          )
+          adSearchUrlsOk++
+        }
+        await pg.query('COMMIT')
+      }
+
+      // 6. logs
       for (let i = 0; i < logs.length; i += BATCH) {
         const batch = logs.slice(i, i + BATCH)
         await pg.query('BEGIN')
@@ -311,7 +331,7 @@ app.post('/api/restore', upload.single('backup'), async (req, res) => {
         await pg.query('COMMIT')
       }
 
-      res.json({ ok: true, ads: adsOk, search_urls: urlsOk, logs: logsOk, property_groups: groupsOk, ad_image_hashes: hashesOk, advertisers: advertisersOk })
+      res.json({ ok: true, ads: adsOk, search_urls: urlsOk, logs: logsOk, property_groups: groupsOk, ad_image_hashes: hashesOk, advertisers: advertisersOk, ad_search_urls: adSearchUrlsOk })
     } finally {
       pg.release()
       await pool.end()

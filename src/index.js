@@ -44,8 +44,8 @@ const runScraper = async () => {
 
   for (const row of urls) {
     try {
-      if (row.source === 'olx')      await scraperOLX(row.url)
-      else if (row.source === 'zap') await scraperZAP(row.url)
+      if (row.source === 'olx')      await scraperOLX(row)
+      else if (row.source === 'zap') await scraperZAP(row)
       else $logger.warn(`[scraper] Fonte desconhecida: ${row.source}`)
     } catch (error) {
       $logger.error(`[scraper] Erro em ${row.source} ${row.url}: ${error.message}`)

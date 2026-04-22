@@ -8,16 +8,17 @@ const adRepository = require('../repositories/adRepository.js')
 class Ad {
 
     constructor(ad) {
-        this.id          = ad.id
-        this.source      = ad.source || 'olx'
-        this.url         = ad.url
-        this.title       = ad.title
-        this.searchTerm  = ad.searchTerm
-        this.price       = ad.price
-        this.description = ad.description || null
-        this.valid       = false
-        this.saved       = null,
-        this.notify      = ad.notify
+        this.id            = ad.id
+        this.source        = ad.source || 'olx'
+        this.url           = ad.url
+        this.title         = ad.title
+        this.searchTerm    = ad.searchTerm
+        this.searchUrlId   = ad.searchUrlId || null
+        this.price         = ad.price
+        this.description   = ad.description || null
+        this.valid         = false
+        this.saved         = null,
+        this.notify        = ad.notify
     }
 
     process = async () => {
@@ -31,6 +32,7 @@ class Ad {
 
             // check if this entry was already added to DB
             if (await this.alreadySaved()) {
+                if (this.searchUrlId) await adRepository.upsertAdSearchUrl(this.id, this.source, this.searchUrlId)
                 return this.checkPriceChange()
             }
 
@@ -57,6 +59,7 @@ class Ad {
         try {
             await adRepository.createAd(this)
             $logger.info('Ad ' + this.id + ' added to the database')
+            if (this.searchUrlId) await adRepository.upsertAdSearchUrl(this.id, this.source, this.searchUrlId)
         } catch (error) {
             $logger.error(error)
         }

@@ -98,6 +98,24 @@ const runMigrations = async () => {
   await query(`ALTER TABLE ads ADD COLUMN IF NOT EXISTS advertiser_id INTEGER REFERENCES advertisers(id)`)
   await query(`ALTER TABLE ads ADD COLUMN IF NOT EXISTS published_at  TEXT`)
   await query(`ALTER TABLE ads ADD COLUMN IF NOT EXISTS updated_at    TEXT`)
+
+  // ── Rastreamento de encerramento ──────────────────────────────
+  await query(`ALTER TABLE ads ADD COLUMN IF NOT EXISTS closed_at TIMESTAMP`)
+
+  // Relaciona cada anúncio com as URLs de busca que o encontraram.
+  // missing_count: ciclos consecutivos em que o ad não apareceu nessa busca.
+  await query(`
+    CREATE TABLE IF NOT EXISTS ad_search_urls (
+      ad_id         TEXT    NOT NULL,
+      ad_source     TEXT    NOT NULL,
+      search_url_id INTEGER NOT NULL REFERENCES search_urls(id) ON DELETE CASCADE,
+      first_seen    TIMESTAMP NOT NULL DEFAULT NOW(),
+      last_seen     TIMESTAMP NOT NULL DEFAULT NOW(),
+      missing_count INTEGER   NOT NULL DEFAULT 0,
+      PRIMARY KEY (ad_id, ad_source, search_url_id)
+    )
+  `)
+  await query(`CREATE INDEX IF NOT EXISTS idx_ad_search_urls_search ON ad_search_urls (search_url_id)`)
 }
 
 module.exports = { query, createTables, runMigrations }

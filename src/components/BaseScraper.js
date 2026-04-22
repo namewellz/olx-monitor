@@ -4,6 +4,7 @@ const cheerio = require('cheerio')
 const $logger = require('./Logger')
 const $httpClient = require('./HttpClient.js')
 const scraperRepository = require('../repositories/scrapperRepository.js')
+const adRepository = require('../repositories/adRepository.js')
 const Ad = require('./Ad.js')
 const config = require('../config')
 
@@ -33,7 +34,11 @@ const createScraper = ({ source, getSearchTerm, setPageParam, parsePage }) => {
         }
     }
 
-    return async (url) => {
+    // Aceita searchUrlRow (objeto com id e url) ou string de URL para retrocompatibilidade
+    return async (searchUrlRow) => {
+        const url          = typeof searchUrlRow === 'string' ? searchUrlRow : searchUrlRow.url
+        const searchUrlId  = typeof searchUrlRow === 'object' ? searchUrlRow.id : null
+
         let page = 1
         let maxPrice = 0
         let minPrice = 99999999
@@ -41,6 +46,7 @@ const createScraper = ({ source, getSearchTerm, setPageParam, parsePage }) => {
         let adsFound = 0
         let validAds = 0
         let nextPage = true
+        const seenAdIds = []
 
         const searchTerm = getSearchTerm(url)
         const notify = await urlAlreadySearched(url)
@@ -60,11 +66,12 @@ const createScraper = ({ source, getSearchTerm, setPageParam, parsePage }) => {
 
                 for (const adData of ads) {
                     $logger.info(`${tag} Ad: ${adData.title} | Price: ${adData.price}`)
-                    const ad = new Ad({ ...adData, searchTerm, notify, source })
+                    const ad = new Ad({ ...adData, searchTerm, notify, source, searchUrlId })
                     await ad.process()
 
                     if (ad.valid) {
                         validAds++
+                        seenAdIds.push(String(adData.id))
                         if (adData.price < minPrice) minPrice = adData.price
                         if (adData.price > maxPrice) maxPrice = adData.price
                         sumPrices += adData.price
@@ -85,6 +92,11 @@ const createScraper = ({ source, getSearchTerm, setPageParam, parsePage }) => {
             const averagePrice = sumPrices / validAds
             $logger.info(`${tag} Max: ${maxPrice} | Min: ${minPrice} | Avg: ${averagePrice}`)
             await scraperRepository.saveLog({ url, adsFound: validAds, averagePrice, minPrice, maxPrice })
+        }
+
+        // Atualiza ausências e encerra ads que sumiram de todas as buscas
+        if (searchUrlId && seenAdIds.length > 0) {
+            await adRepository.updateMissingAds(searchUrlId, seenAdIds)
         }
     }
 }

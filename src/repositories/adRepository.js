@@ -63,6 +63,53 @@ const markAsNotified = async (id, source) => {
   )
 }
 
+const upsertAdSearchUrl = async (adId, adSource, searchUrlId) => {
+  await query(
+    `INSERT INTO ad_search_urls (ad_id, ad_source, search_url_id, first_seen, last_seen, missing_count)
+     VALUES ($1, $2, $3, NOW(), NOW(), 0)
+     ON CONFLICT (ad_id, ad_source, search_url_id) DO UPDATE
+       SET last_seen = NOW(), missing_count = 0`,
+    [String(adId), adSource, searchUrlId]
+  )
+}
+
+// Chamado ao fim de cada ciclo de scraping de uma search_url.
+// Incrementa missing_count dos ads que não apareceram e fecha os que atingiram o limite.
+const CLOSE_AFTER_MISSING = 3
+
+const updateMissingAds = async (searchUrlId, seenAdIds) => {
+  if (seenAdIds.length === 0) return
+
+  const placeholders = seenAdIds.map((_, i) => `$${i + 2}`).join(',')
+  await query(
+    `UPDATE ad_search_urls
+     SET missing_count = missing_count + 1
+     WHERE search_url_id = $1
+       AND ad_id NOT IN (${placeholders})`,
+    [searchUrlId, ...seenAdIds]
+  )
+
+  // Fecha ads que desapareceram de TODAS as buscas que os encontravam
+  await query(
+    `UPDATE ads SET closed_at = NOW()
+     WHERE closed_at IS NULL
+       AND EXISTS (
+         SELECT 1 FROM ad_search_urls
+         WHERE ad_id    = ads.id::text
+           AND ad_source = ads.source
+           AND search_url_id = $1
+           AND missing_count >= $2
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM ad_search_urls
+         WHERE ad_id    = ads.id::text
+           AND ad_source = ads.source
+           AND missing_count < $2
+       )`,
+    [searchUrlId, CLOSE_AFTER_MISSING]
+  )
+}
+
 module.exports = {
   getAd,
   getAdsBySearchTerm,
@@ -71,4 +118,6 @@ module.exports = {
   updateAd,
   getPendingNotifications,
   markAsNotified,
+  upsertAdSearchUrl,
+  updateMissingAds,
 }
